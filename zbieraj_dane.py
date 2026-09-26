@@ -6570,6 +6570,260 @@ def build_indeksy(keys, prev=None, now=None):
     return out
 
 
+# ===================== v121: ceny krypto — dzienne zamknięcia 10 par USDT z publicznych plików giełdy (bez klucza) =====================
+# Plik data/ceny-krypto.json: q[SYM] = {'d': [[dzień, zamknięcie]], 'vol': [[dzień, obrót doby w USDT]]} dla par <SYM>USDT z TR_CR_SYMS
+# (BTC ETH XRP BNB SOL DOGE ADA TRX LINK AVAX), do KC_KEEP dni; ok / part_at / bledy / blok osobno dla każdej pary; full_at = czas
+# ostatniej pełnej budowy (harmonogram w main() liczy godzinę od niego, nie od `at`, które odświeża też ponowienie jednej pary — wzór v104).
+# Źródło: Binance Vision (data.binance.vision) — publiczne archiwum plików rynku spot giełdy (świece 1d, pliki miesięczne i dzienne,
+# bez klucza; ten sam host, z którego zbieracz czyta już metryki kontraktów w v104).
+# Licencja DANYCH: CC BY-NC-SA 4.0 — „Binance Vision Dataset Terms” v1.0 z 26.08.2026 (link na data.binance.vision/terms-of-use.html):
+# pkt 3.1 licencja CC BY-NC-SA 4.0; pkt 4.5 każda rozpowszechniana praca pochodna podaje „Binance Vision” i zostaje na tej samej licencji;
+# pkt 3.4 i 4.1 tylko użycie niekomercyjne (płatny dostęp do tych danych wymaga osobnej umowy z giełdą — decyzja właściciela);
+# pkt 8.2 bez sugerowania, że giełda wspiera projekt. Licencja MIT repozytorium narzędzi tego archiwum dotyczy tylko kodu, nie danych.
+# Podpis „Binance Vision — CC BY-NC-SA 4.0” jest na stronie Źródła (akapit wymaganych podpisów); panel opisuje dane słowami
+# („publiczne dane rynkowe giełdy”), bez nazwy dostawcy.
+# Pierwsze pobranie: pliki miesięczne za KC_MONTHS miesięcy + dzienne za bieżący miesiąc; potem tylko dni po ostatnim zapisanym zamknięciu
+# (plik dzienny pojawia się ok. 2 h po północy UTC, miesięczny — kilka dni po końcu miesiąca; jego brak albo błąd = pliki dzienne).
+# Dzień bez pliku = brak (nigdy zero); dzisiejsza, niepełna doba nie wchodzi. Każda para osobno: błąd = wiersze pobrane przed nim + wpis
+# w błędach; plik dzienny z błędem dłużej niż KC_SKIP_H godzin zostaje luką, gdy późniejszy plik pary się pobierze (para nie staje na
+# zawsze); budżet czasu przebiegu (także przekroczenie czasu zapytania skróconego budżetem) = ciąg dalszy w następnym przebiegu.
+KC_MON_URL = 'https://data.binance.vision/data/spot/monthly/klines/{p}/1d/{p}-1d-{m}.zip'
+KC_DAY_URL = 'https://data.binance.vision/data/spot/daily/klines/{p}/1d/{p}-1d-{d}.zip'
+KC_QUOTE = 'USDT'
+KC_KEEP = 420          # dni na parę w pliku
+KC_MONTHS = 14         # pierwsze pobranie: tyle pełnych miesięcy wstecz (≈ 425 dni, po obcięciu KC_KEEP)
+KC_EVERY = 60          # minut — pełna budowa najwyżej raz na godzinę (plik dzienny giełdy powstaje raz na dobę)
+KC_BUDGET = 50         # s na cały przebieg budowniczego (pierwsze pobranie to ~390 małych plików — reszta w następnym przebiegu)
+KC_TIMEOUT = 20        # s na jeden plik
+KC_SKIP_H = 24         # h: tak długo ten sam plik dzienny pary musi zawodzić, zanim jego dzień zostanie luką
+KC_LABEL = 'Ceny krypto'   # początek komunikatu błędu (strona Źródła)
+KC_SRC = 'Publiczne dane rynkowe giełdy — dzienne zamknięcia rynku spot par z USDT (pliki miesięczne i dzienne świec 1d, bez klucza); zmiany 1/7/30 dni liczy strona'
+
+
+class KcCut(Exception):
+    """Zapytanie przerwane limitem czasu skróconym przez budżet przebiegu — ciąg dalszy w następnym przebiegu, nie błąd pary."""
+
+
+def kc_num(v):
+    """Liczba > 0 z tekstu albo liczby; brak, NaN, nieskończoność, ≤ 0 → None (brak nigdy nie staje się zerem)."""
+    if v is None or isinstance(v, bool):
+        return None
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return None
+    return x if x == x and 0 < x < float('inf') else None
+
+
+def kc_parse(csv_text):
+    """CSV świec 1d (bez nagłówka; kolumny: open_time, open, high, low, close, volume, close_time, quote_volume, …) → {dzień UTC: (zamknięcie, obrót w USDT)}.
+    open_time w milisekundach (pliki do 2024) albo mikrosekundach (od 2025) — rozpoznawane po wielkości liczby; wiersz nagłówka, wiersz bez liczb
+    albo z zamknięciem ≤ 0 pominięty (nigdy zero zamiast ceny); obrót bez liczby → None."""
+    out = {}
+    for row in csv.reader(io.StringIO(csv_text)):
+        if len(row) < 5 or not str(row[0]).strip().isdigit():
+            continue
+        ts_ = int(row[0])
+        if ts_ > 10 ** 14:   # mikrosekundy
+            ts_ //= 1000
+        close = kc_num(row[4])
+        if close is None:
+            continue
+        day = datetime.datetime.fromtimestamp(ts_ / 1000, datetime.timezone.utc).date().isoformat()
+        qv = kc_num(row[7]) if len(row) > 7 else None
+        out[day] = (close, None if qv is None else round(qv))
+    return out
+
+
+def kc_is_timeout(e):
+    """Przekroczenie czasu zapytania: odczyt (TimeoutError / socket.timeout) albo połączenie (urllib opakowuje je w URLError)."""
+    return isinstance(e, TimeoutError) or (isinstance(e, urllib.error.URLError) and isinstance(getattr(e, 'reason', None), TimeoutError))
+
+
+def kc_get(url, termin=None):
+    """Plik zip z jednym CSV → {dzień: (zamknięcie, obrót)}; 404 (pliku jeszcze nie ma) → None; inny błąd HTTP / zip → wyjątek.
+    Limit czasu zapytania to KC_TIMEOUT albo mniej, gdy do końca budżetu zostało mniej; przekroczenie takiego SKRÓCONEGO limitu → KcCut
+    (koniec budżetu, nie błąd pary). Przekroczenie pełnego KC_TIMEOUT to zwykły błąd."""
+    tmo = KC_TIMEOUT if termin is None else max(1, min(KC_TIMEOUT, int(termin - time.monotonic())))
+    try:
+        data = get_bytes(url, timeout=tmo)
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None
+        raise
+    except Exception as e:  # noqa — rozróżnienie: koniec budżetu czy błąd
+        if tmo < KC_TIMEOUT and kc_is_timeout(e):
+            raise KcCut(str(e)) from e
+        raise
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        names = [n for n in z.namelist() if n.lower().endswith('.csv')]
+        if not names:
+            raise ValueError('archiwum bez CSV')
+        return kc_parse(z.read(names[0]).decode('utf-8', 'replace'))
+
+
+def kc_prev_rows(prev):
+    """Wiersze z poprzedniego rekordu pary → {dzień: (zamknięcie, obrót|None)}; wiersz bez daty albo bez liczby pominięty."""
+    rows = {}
+    if not isinstance(prev, dict):
+        return rows
+    vol = {r[0]: r[1] for r in (prev.get('vol') or []) if isinstance(r, list) and len(r) == 2 and isinstance(r[0], str)}
+    for r in prev.get('d') or []:
+        if isinstance(r, list) and len(r) == 2 and isinstance(r[0], str) and re.match(r'^\d{4}-\d{2}-\d{2}$', r[0]) and kc_num(r[1]) is not None:
+            v = kc_num(vol.get(r[0]))
+            rows[r[0]] = (float(r[1]), None if v is None else round(v))
+    return rows
+
+
+def kc_start(last, today):
+    """Pierwszy dzień do pobrania: dzień po ostatnim zapisanym zamknięciu; bez historii — pierwszy dzień miesiąca sprzed KC_MONTHS miesięcy."""
+    if last:
+        return datetime.date.fromisoformat(last) + datetime.timedelta(days=1)
+    m = today.year * 12 + today.month - 1 - KC_MONTHS
+    return datetime.date(m // 12, m % 12 + 1, 1)
+
+
+def kc_age_h(iso):
+    """Wiek znacznika czasu ISO (ze strefą) w godzinach; brak albo zły zapis → -1 (nigdy „dość stary”)."""
+    try:
+        t0 = datetime.datetime.fromisoformat(str(iso))
+    except (TypeError, ValueError):
+        return -1
+    if t0.tzinfo is None:
+        return -1
+    return (_now_utc() - t0).total_seconds() / 3600
+
+
+def kc_pair(sym, prev, today, termin, skip=None):
+    """Jedna para: dopełnienie od kc_start do wczoraj (dzisiejsza doba jest niepełna). Miesiąc zakończony — najpierw plik miesięczny
+    (404 = jeszcze nieopublikowany, inny błąd = uwaga; w obu razach pliki dzienne tego miesiąca); bieżący miesiąc — pliki dzienne.
+    Dzień bez pliku (404) = brak, dalsze dni idą dalej; brak wczorajszego pliku to nie luka (pojawia się ok. 2 h po północy UTC).
+    Plik dzienny z błędem (inny HTTP / zły zip) kończy parę: wiersze pobrane wcześniej zostają, błąd = (dzień, wyjątek). `skip` = dzień,
+    którego plik zawodzi od ponad KC_SKIP_H h: gdy późniejszy plik pary się pobierze, ten dzień zostaje luką (brak, nigdy zero) z uwagą;
+    gdy nie — nadal błąd tego dnia. Koniec budżetu (także KcCut) = przerwane, bez błędu.
+    Zwraca (rekord {'d', 'vol'}, uwagi, przerwane budżetem, błąd (dzień, wyjątek) | None)."""
+    pair = sym + KC_QUOTE
+    rows = kc_prev_rows(prev)
+    end = today - datetime.timedelta(days=1)
+    d = kc_start(max(rows) if rows else None, today)
+    notes, cut, err, pending = [], False, None, None
+
+    def merge(got):
+        nonlocal pending
+        for k, v in got.items():
+            if k <= end.isoformat():   # bez dzisiejszej doby
+                rows[k] = v
+        if pending is not None:   # późniejszy plik się pobrał — dzień z uporczywym błędem zostaje luką
+            notes.append(f'{pending[0]}: plik z błędem dłużej niż {KC_SKIP_H} h ({pending[1]}) — dzień pominięty (brak, nie zero)')
+            pending = None
+
+    while d <= end:
+        if time.monotonic() > termin:
+            cut = True
+            break
+        nxt = datetime.date(d.year + (d.month == 12), d.month % 12 + 1, 1)   # pierwszy dzień następnego miesiąca
+        if nxt <= today:   # miesiąc zakończony — jeden plik miesięczny zamiast ≤ 31 dziennych
+            key = d.strftime('%Y-%m')
+            try:
+                got = kc_get(KC_MON_URL.format(p=pair, m=key), termin)
+            except KcCut:
+                cut = True
+                break
+            except Exception as e:  # noqa — uszkodzony albo niedostępny plik miesięczny: ten miesiąc plikami dziennymi
+                notes.append(f'{key}: plik miesięczny z błędem ({e}) — pliki dzienne')
+                got = None
+            if got is not None:
+                merge(got)
+                d = nxt
+                continue
+        m_end = min(end, nxt - datetime.timedelta(days=1))
+        while d <= m_end:
+            if time.monotonic() > termin:
+                cut = True
+                break
+            try:
+                got = kc_get(KC_DAY_URL.format(p=pair, d=d.isoformat()), termin)
+            except KcCut:
+                cut = True
+                break
+            except Exception as e:  # noqa — plik dzienny z błędem
+                if pending is None and skip == d.isoformat():
+                    pending = (d.isoformat(), e)   # próbujemy dni dalej; luka dopiero, gdy któryś się pobierze
+                    d += datetime.timedelta(days=1)
+                    continue
+                err = pending or (d.isoformat(), e)
+                break
+            if got is None:
+                if d != end:
+                    notes.append(f'{d.isoformat()}: brak pliku')
+            else:
+                merge(got)
+            d += datetime.timedelta(days=1)
+        if cut or err:
+            break
+    if pending is not None and err is None and not cut:
+        err = pending   # nic późniejszego się nie pobrało — dzień nadal blokuje parę (następny przebieg spróbuje znowu)
+    days = sorted(rows)[-KC_KEEP:]
+    rec = {'d': [[k, rows[k][0]] for k in days], 'vol': [[k, rows[k][1]] for k in days if rows[k][1] is not None]}
+    return rec, notes, cut, err
+
+
+def build_ceny_krypto(prev=None, only=None, today=None):
+    """data/ceny-krypto.json — dzienne zamknięcia (i obrót doby w USDT) 10 par <SYM>USDT z TR_CR_SYMS z publicznych plików giełdy (bez klucza);
+    do KC_KEEP dni na parę; pełna budowa najwyżej co KC_EVERY min (od full_at). Każda para osobno: błąd = wiersze pobrane przed nim (albo
+    poprzednie dane tej pary) z własnym czasem + wpis w bledy, blok (dzień i początek błędu) i w błędach zbieracza; przerwane budżetem = ok False
+    bez błędu (ciąg dalszy w następnym przebiegu). `only` = tylko te pary (reszta przepisana z poprzedniego pliku; full_at bez zmian).
+    Żadnych danych = wyjątek (główny przebieg zostawia poprzedni plik). Brak nigdy nie jest zerem."""
+    today = today or _now_utc().date()
+    termin = time.monotonic() + KC_BUDGET
+    prev = prev if isinstance(prev, dict) else {}
+    pq = prev.get('q') if isinstance(prev.get('q'), dict) else {}
+    pok = prev.get('ok') if isinstance(prev.get('ok'), dict) else {}
+    pat = prev.get('part_at') if isinstance(prev.get('part_at'), dict) else {}
+    pbl = prev.get('blok') if isinstance(prev.get('blok'), dict) else {}
+    out = {'at': NOW, 'full_at': (prev.get('full_at') or prev.get('at') or NOW) if only is not None else NOW,
+           'src': KC_SRC, 'quote': KC_QUOTE, 'keep': KC_KEEP, 'ok': {}, 'part_at': {}, 'bledy': {}, 'blok': {}, 'q': {}}
+    errs = []
+    for sym in TR_CR_SYMS:
+        old = pq.get(sym) if isinstance(pq.get(sym), dict) else None
+        ob = pbl.get(sym) if isinstance(pbl.get(sym), dict) else None
+        if only is not None and sym not in only:   # para spoza ponowienia — bez zmian, z własnym czasem
+            if old:
+                out['q'][sym] = old; out['ok'][sym] = pok.get(sym) is True; out['part_at'][sym] = pat.get(sym) or prev.get('at')
+            if ob:
+                out['blok'][sym] = ob
+            continue
+        skip = ob.get('d') if ob and kc_age_h(ob.get('od')) >= KC_SKIP_H else None
+        try:
+            rec, notes, cut, err = kc_pair(sym, old, today, termin, skip)
+        except Exception as e:  # noqa — nieprzewidziany błąd pary: poprzednie dane z własnym czasem, nigdy zero
+            rec, notes, cut, err = None, [], False, (None, e)
+        if rec is None:
+            if old:
+                out['q'][sym] = old
+        elif rec['d']:
+            out['q'][sym] = rec
+        grew = rec is not None and bool(rec['d']) and (old is None or rec['d'] != old.get('d'))
+        out['part_at'][sym] = NOW if rec is not None and (err is None or grew) else (pat.get(sym) or prev.get('at'))
+        for n in notes:
+            META['notes'].append(mask(f'{KC_LABEL}: {sym} {n}'))
+        if err is not None:
+            day, e = err
+            msg = mask(f'{sym}: ' + (f'{day}: ' if day else '') + str(e))[:120]
+            errs.append(msg); out['ok'][sym] = False; out['bledy'][sym] = msg
+            if day:   # początek błędu tego samego dnia przechodzi z pliku do pliku — po KC_SKIP_H h dzień może zostać luką
+                out['blok'][sym] = {'d': day, 'od': ob['od'] if ob and ob.get('d') == day and kc_age_h(ob.get('od')) >= 0 else NOW}
+            continue
+        out['ok'][sym] = bool(rec['d']) and not cut
+        if cut:
+            META['notes'].append(f'{KC_LABEL}: {sym} — budżet czasu przebiegu ({KC_BUDGET} s), ciąg dalszy w następnym przebiegu')
+    if errs:
+        META['errors'].append(mask(f'{KC_LABEL}: ' + '; '.join(errs)[:400]))
+    if not out['q']:
+        raise RuntimeError('żadna para nie odpowiedziała' + (': ' + '; '.join(errs)[:200] if errs else ''))
+    return out
+
+
 def main():
     SAVED.clear()      # v89: TRENDY liczone tylko z plików tego przebiegu
     _DEADLINE[0] = time.monotonic() + SOSO_BUDGET
@@ -6756,6 +7010,21 @@ def main():
     except Exception as e:
         META['errors'].append(mask(f'Wieloryby: {e}')); META['ok']['wieloryby'] = False
         if prev_wh: save('wieloryby', prev_wh)
+    # v121: ceny krypto — dzienne zamknięcia 10 par USDT z publicznych plików giełdy (bez klucza): pełna budowa najwyżej co godzinę
+    # (KC_EVERY, liczone od full_at — ponowienie jednej pary odświeża `at`, ale nie zegar pełnej budowy); młody plik z parą bez powodzenia
+    # (błąd albo przerwane dopełnienie) = dobierana tylko ta para; awaria całości = poprzedni plik i błąd
+    prev_kc = previous('ceny-krypto')
+    kc_ok = prev_kc.get('ok') if isinstance(prev_kc, dict) and isinstance(prev_kc.get('ok'), dict) else {}
+    kc_bad = [s for s in TR_CR_SYMS if kc_ok.get(s) is not True]
+    kc_young = isinstance(prev_kc, dict) and fresh({'at': prev_kc.get('full_at') or prev_kc.get('at')}, KC_EVERY)
+    if kc_young and not kc_bad:
+        save('ceny-krypto', prev_kc); META['ok']['ceny-krypto'] = 'cached'
+    else:
+        try:
+            kc = build_ceny_krypto(prev_kc, only=set(kc_bad) if kc_young else None); save('ceny-krypto', kc); META['ok']['ceny-krypto'] = not kc.get('bledy')
+        except Exception as e:
+            META['errors'].append(mask(f'{KC_LABEL}: {e}')); META['ok']['ceny-krypto'] = False
+            if prev_kc: save('ceny-krypto', prev_kc)
     # v106: indeksy świata (EODHD, rotacja 20 zapytań na dobę) i notowania ETF (Massive, zapas Tiingo) — klucze właściciela; co godzinę;
     # brak klucza = informacja (notes), nie błąd; awaria = poprzedni plik
     ix_keys = {k: os.environ.get(k, '').strip() for k in IX_KEYS}

@@ -4530,11 +4530,116 @@ test('v120.1: TRENDY — sekcja dzienna przed tygodniowym wprowadzeniem; tytuł 
   assert.ok(html.includes("w.innerHTML=head+dly+(dly?`<h2 class=\"trd-wk mtxt\">${t('trd.d.wk')}</h2>`:'')+disc+(!cr?"), 'dzienna sekcja pierwsza, potem „Tło” i tygodniowe wprowadzenie');
   assert.ok(html.includes("<span class=\"gsub\">${t(cr?'trd.sub':'trd.subd')}</span>"), 'widok krypto zachowuje dotychczasowy podtytuł');
   const apl = [...html.matchAll(/for\(const l in (EXTRA\d+)\)if\(I18N\[l\]\)Object\.assign\(I18N\[l\],\1\[l\]\);\n/g)].map(m => m[1]);
-  assert.equal(apl[apl.length - 1], 'EXTRA115', 'EXTRA115 nałożony jako ostatni — nadpisuje trd.h1');
+  assert.ok(apl.indexOf('EXTRA115') > apl.indexOf('EXTRA80') && apl.indexOf('EXTRA80') >= 0, 'EXTRA115 nałożony po EXTRA80 — nadpisuje trd.h1 (kolejne słowniki nie mają trd.h1)');
   for (const L of ['pl', 'en', 'de', 'es', 'fr', 'it', 'pt', 'ru', 'zh', 'ja']) {
     const t = v96src.tFor(L);
     assert.ok(t('trd.subd') !== 'trd.subd' && t('trd.h1').length > 10, L);
     assert.ok(!/kupuj(?![a-ząćęłńóśźż])|sprzedawaj(?![a-ząćęłńóśźż])|buy now|guarantee|forecast/i.test(t('trd.h1') + t('trd.subd')), L + ' bez trybu rozkazującego i obietnic');
   }
   assert.equal(v96src.tFor('pl')('trd.h1'), 'Dokąd płynie kapitał: następna sesja i ostatni tydzień');
+});
+
+test('v121: ceny krypto — pomocnicze: wiersze po dacie, zmiana wobec dokładnie k dni wcześniej (luka = brak, nie zero), wyprowadzenie, format ceny i obrotu', () => {
+  const k0 = html.indexOf('/* ===================== v121: CENY KRYPTO'), k1 = html.indexOf('\nfunction kcItems(', k0);
+  assert.ok(k0 > 0 && k1 > k0, 'blok v121 w stronie');
+  const T = (k, v) => k + (v ? JSON.stringify(v) : '');
+  const K = new Function('t', 'nfmt', 'fPct', 'escH', 'LOCALE', 'LANG', html.slice(k0, k1) + '\nreturn {KC, kcRows, kcDay, kcChg, kcDerive, kcSeries, kcTone, kcPct, kcPx, kcVol};')(
+    T, (v, d) => Number(v).toFixed(d), (v, d) => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(d) + '%', v96src.escH, {pl: 'pl-PL'}, 'pl');
+  const day = i => new Date(Date.UTC(2026, 8, 25) - i * 864e5).toISOString().slice(0, 10);   // 2026-09-25 minus i dni
+  const rows = [];
+  for (let i = 40; i >= 0; i--) if (i !== 7) rows.push([day(i), 100 + (40 - i)]);   // luka dokładnie 7 dni przed ostatnim
+  rows.push(['zła data', 5], ['2026-09-10', 0], ['2026-09-11', 'x'], 'tekst');
+  const r = K.kcRows(rows);
+  assert.equal(r.length, 40, 'złe wiersze odrzucone (data, zero, tekst)'); assert.equal(r[0][0], day(40)); assert.equal(r[r.length - 1][0], '2026-09-25');
+  assert.equal(K.kcDay('2026-09-25', -7), '2026-09-18'); assert.equal(K.kcDay('2026-03-01', -1), '2026-02-28'); assert.equal(K.kcDay('x', -1), '');
+  const c1 = K.kcChg(rows, 1); assert.ok(c1 && c1.t === '2026-09-24' && Math.abs(c1.p - (140 / 139 - 1) * 100) < 1e-9, '1 D wobec 24.09');
+  assert.equal(K.kcChg(rows, 7), null, 'luka 7 dni wcześniej = brak, nie zero');
+  const c30 = K.kcChg(rows, 30); assert.ok(c30 && c30.t === '2026-08-26' && Math.abs(c30.p - (140 / 110 - 1) * 100) < 1e-9, '30 D wobec 26.08');
+  assert.equal(K.kcChg([], 1), null); assert.equal(K.kcChg([['2026-09-25', 5]], 1), null, 'jeden wiersz — brak porównania');
+  const v = K.kcDerive({d: rows, vol: [['2026-09-25', 1520256979], ['2026-09-24', 5]]});
+  assert.equal(v.date, '2026-09-25'); assert.equal(v.close, 140); assert.equal(v.vol, 1520256979); assert.equal(v.d7, null); assert.equal(v.n, 40); assert.equal(v.from, day(40));
+  assert.equal(K.kcDerive({d: rows}).vol, null, 'bez obrotu = null'); assert.equal(K.kcDerive(null), null); assert.equal(K.kcDerive({d: []}), null); assert.equal(K.kcDerive('x'), null);
+  K.KC.data = {q: {BTC: {d: rows}}}; assert.equal(K.kcSeries('btc').length, 40, 'zaczep dla TRENDÓW: seria pary'); assert.equal(K.kcSeries('ETH').length, 0); K.KC.data = null; assert.equal(K.kcSeries('BTC').length, 0);
+  assert.equal(K.kcTone(0.04), ''); assert.equal(K.kcTone(0.05), 'pos'); assert.equal(K.kcTone(-0.3), 'neg'); assert.equal(K.kcTone(null), '');
+  assert.equal(K.kcPct(null), '<span class="cell mono na" title="kc.na">—</span>', 'brak z powodem');
+  assert.ok(K.kcPct({p: 2.34, t: '2026-09-24'}).startsWith('<span class="cell mono pos" title="kc.vs{') && K.kcPct({p: 2.34, t: '2026-09-24'}).endsWith('">+2.3%</span>'), 'zmiana z datą porównania w podpowiedzi');
+  assert.ok(K.kcPct({p: -0.04, t: '2026-09-24'}).includes('class="cell mono" title=') && K.kcPct({p: -0.04, t: '2026-09-24'}).endsWith('>0.0%</span>'), 'zero po zaokrągleniu — bez koloru');
+  assert.equal(K.kcPx(84099.99), '84100'); assert.equal(K.kcPx(4034.5), '4035'); assert.equal(K.kcPx(403.456), '403.46'); assert.equal(K.kcPx(0.2468), '0.2468'); assert.equal(K.kcPx(null), '—'); assert.equal(K.kcPx(0), '—');
+  assert.equal(K.kcVol(1520256979), '1.52 wh.u.mld USDT'); assert.equal(K.kcVol(49214794), '49.2 wh.u.mln USDT'); assert.equal(K.kcVol(250e6), '250 wh.u.mln USDT'); assert.equal(K.kcVol(null), '');
+});
+test('v121: ceny krypto — panel z pliku: 10 wierszy z logo monety, datą i wiekiem, brak = „—” z powodem, para z błędem = dopisek, plik za stary albo bez pliku = ukryty', () => {
+  const k0 = html.indexOf('/* ===================== v121: CENY KRYPTO'), k1 = html.indexOf('\nfunction kcApply(', k0);
+  assert.ok(k0 > 0 && k1 > k0);
+  const T = (k, v) => k + (v ? JSON.stringify(v) : '');
+  const run = (D, apply) => {
+    const el = {innerHTML: '', hidden: true, querySelectorAll: () => [], querySelector: () => null};
+    const r = new Function('$', 't', 'nfmt', 'fPct', 'escH', 'LOCALE', 'LANG', 'engDate', 'gAgeNote', 'icoWrap', 'coinImg', 'D',
+      html.slice(k0, k1) + (apply ? '\nreturn kcOk(D);' : '\nKC.data=D;renderKc();return null;'))(
+      q => q === '#c-ceny-krypto' ? el : null, T, (v, d) => Number(v).toFixed(d), (v, d) => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(d) + '%', v96src.escH, {pl: 'pl-PL'}, 'pl',
+      s => '[' + String(s) + ']', d => ' · age(' + String(d).slice(0, 10) + ')', x => `<span class="icos">${x}</span>`, (s, c) => `<i class="ico ${c}">${s}</i>`, D);
+    return apply ? r : el;
+  };
+  const now = new Date().toISOString(), y = new Date(Date.now() - 864e5).toISOString().slice(0, 10), y2 = new Date(Date.now() - 2 * 864e5).toISOString().slice(0, 10);
+  const mk = (c0, c1) => ({d: [[y2, c0], [y, c1]], vol: [[y, 1520256979]]});
+  const D = {at: now, keep: 420, ok: {BTC: true, ETH: false}, bledy: {ETH: 'ETH: HTTP Error 500'}, q: {BTC: mk(80000, 84099.99), ETH: mk(4000, 3900), DOGE: {d: [[y, 0.2468]]}}};
+  const el = run(D), out = el.innerHTML;
+  assert.ok(!el.hidden && out.includes('kc.t') && out.includes('kc.sub') && out.includes('inst.file{"t":"[' + now + ']"}') && out.includes('class="live on"'), 'nagłówek, czas pliku, plik młody');
+  assert.equal((out.match(/<\/tr>/g) || []).length, 11, 'nagłówek + każda z 10 monet ma wiersz'); assert.equal((out.match(/<th>/g) || []).length, 4, 'cztery kolumny zawsze widoczne'); assert.equal((out.match(/<th class="kc-w">/g) || []).length, 2, 'dwie kolumny ukrywane na telefonie');
+  assert.ok(out.includes('<i class="ico sm">BTC</i>') && out.includes('<b>BTC</b>') && out.includes('<span class="cell mono">84100</span>') && out.includes('>+5.1%</span>'), 'BTC: logo, zamknięcie bez groszy, 1 D +5,1 %: ' + out.slice(out.indexOf('<b>BTC'), out.indexOf('<b>BTC') + 400));
+  assert.ok(out.includes('<span class="cell mono">1.52 wh.u.mld USDT</span>'), 'obrót doby w USDT (waluta kwotowana pary)');
+  assert.ok(out.includes(' · age(' + y + ')'), 'data i wiek zamknięcia');
+  assert.ok(out.includes('>−2.5%</span>') && out.includes(' · kc.stale</small>'), 'ETH: spadek i dopisek o nieudanym pobraniu (liczby z poprzedniego pliku)');
+  assert.ok(out.includes('<span class="cell mono">0.2468</span>'), 'DOGE z czterema miejscami');
+  assert.equal((out.match(/title="kc\.na"/g) || []).length, 2 + 2 + 3 + 7 * 3, 'BTC/ETH bez 7 D i 30 D, DOGE bez żadnej zmiany, 7 monet bez serii — brak z powodem, nigdy zero');
+  assert.equal((out.match(/class="kc-na"/g) || []).length, 7, 'siedem monet bez serii'); assert.ok(out.includes('<small>kc.nodata</small>') && out.includes('<span class="cell mono na">—</span>'));
+  assert.ok(out.includes('kc.note{"d":') && out.includes('"n":"420"}') && out.includes('kc.not1') && out.includes('kc.not3') && out.includes('eng.notsays') && out.includes('kc.foot') && out.includes('eng.disclaimer'), 'nota, „czego nie mówią”, stopka');
+  assert.ok(!/Binance|Coinbase|Kraken|Bybit|OKX/i.test(out), 'bez nazw giełd i dostawców w panelu');
+  const old = run(Object.assign({}, D, {at: new Date(Date.now() - 4 * 3600e3).toISOString()}));
+  assert.ok(old.innerHTML.includes('class="live off"'), 'plik starszy niż 3 h = wskaźnik wyłączony');
+  assert.ok(run(D, true) === true && run(null, true) === false && run({at: now, q: {}}, true) === false && run({at: 'x', q: D.q}, true) === false, 'plik ok: czas, q, świeże zamknięcie');
+  const stale = new Date(Date.now() - 20 * 864e5).toISOString().slice(0, 10);
+  assert.equal(run({at: now, q: {BTC: {d: [[stale, 5]]}}}, true), false, 'najnowsze zamknięcie sprzed 20 dni = plik odrzucony');
+  const Z = run(null); assert.ok(Z.hidden && Z.innerHTML === '', 'bez pliku sekcja ukryta');
+  const E = run({at: now, q: {BTC: {d: []}}}); assert.ok(E.hidden && E.innerHTML === '', 'plik bez żadnej serii = ukryty');
+});
+test('v121: ceny krypto — słownik EXTRA111 w 10 językach (te same klucze, miejsca na daty i liczby), bez nazw dostawców; sekcja po archiwum, styl, plik, odświeżanie co 60 min', () => {
+  const KEYS = ['kc.t', 'kc.sub', 'kc.c.coin', 'kc.c.close', 'kc.c.1d', 'kc.c.7d', 'kc.c.30d', 'kc.c.vol', 'kc.vs', 'kc.na', 'kc.nodata', 'kc.stale', 'kc.note', 'kc.foot', 'kc.not1', 'kc.not2', 'kc.not3'];
+  const e0 = html.indexOf('const EXTRA111='), e1 = html.indexOf(';\nfor(const l in EXTRA111)', e0);
+  assert.ok(e0 > 0 && e1 > e0 && html.includes('for(const l in EXTRA111)if(I18N[l])Object.assign(I18N[l],EXTRA111[l]);\n'), 'słownik EXTRA111 podpięty');
+  const E = JSON.parse(html.slice(e0 + 'const EXTRA111='.length, e1));
+  const PROV = /Binance|Coinbase|Kraken|Bybit|OKX|CoinGecko|CoinPaprika|CoinMarketCap|Kaiko|Yahoo|Stooq/i;
+  for (const L of ['pl', 'en', 'de', 'es', 'fr', 'it', 'pt', 'ru', 'zh', 'ja']) {
+    assert.equal(Object.keys(E[L]).sort().join('|'), KEYS.slice().sort().join('|'), L + ': klucze EXTRA111');
+    const t = v96src.tFor(L);
+    for (const k of KEYS) { assert.ok(v96src.I18N[L][k] && t(k) !== k && t(k).trim(), L + ' ' + k); assert.ok(!PROV.test(t(k)), 'dostawca: ' + L + ' ' + k); }
+    assert.ok(E[L]['kc.vs'].includes('{t}') && E[L]['kc.note'].includes('{d}') && E[L]['kc.note'].includes('{n}'), L + ': miejsca na datę i liczbę');
+    assert.ok(!t('kc.note', {d: 'QQ', n: '420'}).includes('{') && t('kc.note', {d: 'QQ', n: '420'}).includes('420'), L + ' note');
+    assert.ok(/USDT/.test(E[L]['kc.c.close']) && /UTC/.test(E[L]['kc.not3']), L + ': waluta kwotowana i doba UTC nazwane');
+    assert.ok(/USDT/.test(E[L]['kc.foot']) && !/\bUSD\b|美元|米ドル/.test(E[L]['kc.foot']), L + ': obrót doby w USDT, nie w USD');
+  }
+  assert.ok(v96src.tFor('pl')('kc.sub').includes('nie zmierzony przepływ') && v96src.tFor('en')('kc.sub').includes('not a measured capital flow'), 'notowanie ≠ przepływ');
+  assert.ok(v96src.tFor('pl')('kc.sub').includes('nigdy zero') && v96src.tFor('en')('kc.sub').includes('never zero'), 'brak nie jest zerem');
+  for (const k of ['wh.u.mld', 'wh.u.mln', 'inst.file', 'eng.notsays', 'eng.disclaimer']) assert.ok(v96src.I18N.pl[k] && v96src.I18N.en[k], 'wspólny klucz używany przez panel: ' + k);
+  const apl = [...html.matchAll(/for\(const l in (EXTRA\d+)\)if\(I18N\[l\]\)Object\.assign\(I18N\[l\],\1\[l\]\);\n/g)].map(m => m[1]);
+  assert.ok(apl.indexOf('EXTRA111') > apl.indexOf('EXTRA109') && apl.indexOf('EXTRA109') >= 0, 'EXTRA111 po EXTRA109');
+  assert.equal(html.split('<section class="panel pcard" id="c-ceny-krypto" hidden></section>').length, 2, 'jedna sekcja');
+  const a = html.indexOf('<section class="panel pcard" id="c-archiwum" hidden></section>'), x = html.indexOf('<section class="panel pcard" id="c-ceny-krypto" hidden></section>');
+  assert.ok(a > 0 && x > a && x < a + 500, 'CRYPTO: po archiwum własnym');
+  assert.ok(html.includes("function kcLoad(){srvJSON('ceny-krypto').then(kcApply);}") && html.includes('KC.timer=setInterval(()=>{if(!document.hidden)kcLoad();},60*60*1000);')
+    && html.includes("kcLoad();kcAuto();try{new MutationObserver(()=>renderKc()).observe(document.documentElement,{attributes:true,attributeFilter:['lang']});}catch(e){}"), 'plik serwera, odświeżanie co 60 min, zmiana języka');
+  assert.ok(html.includes('/* v121 ceny krypto */') && html.includes('#c-ceny-krypto .etft{min-width:0;width:100%}') && html.indexOf('/* v121 ceny krypto */') < html.indexOf('/* v105 wieloryby */'), 'styl przed stylem wielorybów');
+  assert.equal(html.split('/* ===================== v121: CENY KRYPTO').length, 2, 'jeden blok JS');
+  assert.ok(html.indexOf('/* ===================== v121: CENY KRYPTO') < html.indexOf('/* ===================== v98: USA'), 'blok przed blokiem USA');
+});
+test('v121: ceny krypto — podpis licencji danych (CC BY-NC-SA 4.0, „Binance Vision”) w akapicie wymaganych podpisów strony Źródła; nigdzie indziej', () => {
+  const CREDIT = 'Crypto daily closes (spot, USDT pairs) and futures long/short metrics: <a href="https://data.binance.vision/" target="_blank" rel="noopener">Binance Vision</a>, <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a> — values derived from them on this site are shared under the same licence, for non-commercial use';
+  const out = v103zr.render('pl', {at: v103zr.FRESH, ok: {'ceny-krypto': true}}).out;
+  const cut = out.indexOf('<section class="panel pgc zr-attr2">'); assert.ok(cut > 0);
+  const card = out.slice(0, cut), attr = out.slice(cut);
+  assert.ok(attr.includes(CREDIT), 'podpis w akapicie wymaganych podpisów');
+  assert.ok(attr.indexOf('CC BY-NC 4.0</a>) · ' + CREDIT + ' · ') > 0 && attr.indexOf(CREDIT) < attr.indexOf('<br>'), 'po podpisie Coin Metrics, w linii serwisów');
+  assert.ok(!/Binance/.test(card), 'karta stanu bez nazwy dostawcy');
+  assert.equal(html.split('by-nc-sa/4.0/').length, 2, 'jeden link do licencji CC BY-NC-SA 4.0 w całej stronie');
+  const k0 = html.indexOf('/* ===================== v121: CENY KRYPTO'), k1 = html.indexOf('/* ===================== v98: USA', k0);
+  assert.ok(!/Binance/i.test(html.slice(k0, k1)), 'blok panelu bez nazwy dostawcy');
 });
