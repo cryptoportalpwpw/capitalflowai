@@ -3687,6 +3687,12 @@ TD_OB = (('in_eq', 'in', 1, None, 'INDA', 'USD'), ('tw', 'tw', 1, 5, 'EWT', 'TWD
 TD_PX = ('EWC', 'ILF', 'VGK', 'KSA', 'TUR', 'EIS', 'EZA', 'ASEA', 'EWA')   # rynki tylko z ceną (zamknięcia z pliku cen, bez przepływów)
 TD_GRP = {sym: gid for gid, ms in TR_FE for sym in ms}                      # fundusz → grupa (nazwa i ikona na stronie); lista funduszy = TR_FE
 TD_EXCLUDED = ('br', 'mx', 'th', 'in_bd', 'jp', 'tr', 'cf', 'cs', 'cr', 'ix')   # poza sygnałami dziennymi — powody w opisie metody na stronie
+# v123: rodzina krypto „cr” — 10 par z TR_CR_SYMS, doba UTC, na razie tylko ruch ceny (reguła „p”). Własna wersja i własny licznik
+# „od wdrożenia” (TD_VC, TD_SINCE_CR) — 7 linii świata (TD_V, TD_SINCE) bez zmian. TD_EXCLUDED nadal zawiera 'cr': opisuje zestaw
+# reguł wersji TD_V, do którego krypto nie należy. Przepływy (ETF, giełdy, stablecoiny) = faza 2 → TD_VC + 1 i nowa data TD_SINCE_CR.
+TD_VC = 1                     # wersja reguły krypto (strona: tytuł opisu metody w widoku krypto)
+TD_SINCE_CR = '2026-09-28'    # pierwsza doba UTC po wdrożeniu (wdrożenie później → następna doba po wdrożeniu)
+TD_RULES_CR = (('cr', 'p'),)  # 1 linia testu krypto, zawsze publikowana
 
 
 def _isnum(x):
@@ -4069,6 +4075,14 @@ def _td_live(date, now_ny):
     return now < datetime.datetime(nx.year, nx.month, nx.day, 16, 15)
 
 
+def _td_live_cr(date, now_utc):
+    """v123: krypto — następny dzień = kolejna doba UTC (7 dni w tygodniu, bez weekendów i świąt); karta aktualna do końca tej doby
+    (północ UTC po niej), potem „nieaktualna”. Zegar bez strefy traktowany jak UTC."""
+    end = _d(date) + datetime.timedelta(days=2)
+    now = now_utc.astimezone(datetime.timezone.utc).replace(tzinfo=None) if getattr(now_utc, 'tzinfo', None) else now_utc
+    return now < datetime.datetime(end.year, end.month, end.day)
+
+
 def _td_month_first(dates, i):
     """Czy wiersz i jest pierwszym wierszem swojego miesiąca kalendarzowego (obligacje: sesja wypłaty odsetek obniża NAV — nie jest wynikiem)."""
     return i <= 0 or str(dates[i])[:7] != str(dates[i - 1])[:7]
@@ -4108,7 +4122,7 @@ def _td_pairs(dates, flow, ret, pub=0, bd=False):
     return out
 
 
-def _td_pool(lines):
+def _td_pool(lines, rules=None, since=None):   # v123: rules/since — linie krypto; None = TD_RULES / TD_SINCE w chwili wywołania
     """Pary wszystkich rynków rodziny razem → 7 linii (fam, reguła) z TD_RULES, zawsze wszystkie. lines: {(fam, reguła): [(data, trafienie, id)]}.
     Zakres 95% (Wilson) liczony na dni z sygnałem (rynki poruszają się razem), nie na pary. Połowy historii dzielone po datach sygnału.
     lk/ln/ldays = pary z datą sygnału ≥ TD_SINCE (poza próbą). Ocena: short (< TD_NEFF dni), edge (dolna granica > 50 i obie połowy > 50),
@@ -4116,14 +4130,14 @@ def _td_pool(lines):
     def pct(hs):
         return round(100 * sum(hs) / len(hs), 1) if hs else None
     out = []
-    for fam, rule in TD_RULES:
+    for fam, rule in (TD_RULES if rules is None else rules):
         pr = sorted((lines or {}).get((fam, rule)) or [], key=lambda x: x[0])
         n = len(pr); k = sum(h for _, h, _ in pr)
         ds = sorted({d for d, _, _ in pr}); days = len(ds)
         lo, hi = wilson(k, n, n_eff=days) if n else (None, None)
         mid = ds[days // 2] if days > 1 else None
         p1 = pct([h for d, h, _ in pr if mid and d < mid]); p2 = pct([h for d, h, _ in pr if mid and d >= mid])
-        late = [(d, h) for d, h, _ in pr if d >= TD_SINCE]
+        late = [(d, h) for d, h, _ in pr if d >= (TD_SINCE if since is None else since)]
         if days < TD_NEFF:
             vd = 'short'
         elif lo is not None and lo > 50 and p1 is not None and p1 > 50 and p2 is not None and p2 > 50:
@@ -4208,7 +4222,7 @@ def _td_series_px(ce, sym):
     return {'id': sym, 'fam': 'eq', 'grp': None, 'iss': None, 'pub': 0, 'sym': sym, 'cur': None, 'dates': dates, 'flow': None, 'fu': None, 'ret': ret}
 
 
-def _td_row(s, vd_by, own, now_ny, today):
+def _td_row(s, vd_by, own, now_ny, today, now_utc=None):   # v123: now_utc — zegar kart krypto (doba UTC)
     """Karta jednego rynku z ostatniego dnia jego serii. Stany: buy/sell (kierunek, aktualna, linia z przewagą), obs (kierunek, aktualna,
     bez przewagi — szara karta po stronie kierunku; ocena „anti” nigdy nie odwraca strony), x (sprzeczne), quiet (spokojny dzień),
     stale (po 16:15 NY następnej sesji — reguła i siła nadal policzone do opisu), short (żadne wejście reguły nie ma 40 dni historii),
@@ -4223,7 +4237,7 @@ def _td_row(s, vd_by, own, now_ny, today):
     inputs = [v for v in ([flow] if bd else [flow, ret]) if v]              # wejścia reguły (u obligacji cena nie wchodzi)
     has_now = any(_isnum(v[i]) for v in inputs)
     has_hist = any(sum(1 for x in v[max(0, i - TD_LB):i] if _isnum(x)) >= TD_MIN for v in inputs)
-    live = _td_live(date, now_ny)
+    live = _td_live_cr(date, now_utc) if s['fam'] == 'cr' else _td_live(date, now_ny)
     signal = rule in ('f', 'p', 'fp')
     vd = vd_by.get((s['fam'], rule)) if signal else None
     if not has_now:
@@ -4244,7 +4258,7 @@ def _td_row(s, vd_by, own, now_ny, today):
     def rnd(x, k):
         return round(x, k) if _isnum(x) else None
     return {'id': s['id'], 'fam': s['fam'], 'grp': s['grp'], 'iss': s['iss'], 'pub': s['pub'], 'sym': s['sym'], 'date': date,
-            'nx': _td_next(date).isoformat(), 'live': live, 'age': (today - _d(date)).days,
+            'nx': (_d(date) + datetime.timedelta(days=1) if s['fam'] == 'cr' else _td_next(date)).isoformat(), 'live': live, 'age': (today - _d(date)).days,
             'f': rnd(flow[i] if flow else None, 1), 'cur': s['cur'], 'fu': rnd(s['fu'][i] if s['fu'] else None, 1), 'zf': rnd(zf, 2),
             'r': rnd(ret[i] if ret else None, 2), 'zp': rnd(zp, 2), 'rule': rule, 'dir': d, 'side': side, 'str': sg, 'st': st, 'vd': vd,
             'ik': o[0], 'in': o[1]}
@@ -4299,6 +4313,68 @@ def build_daily(S):
             rows.append(_td_row(s, vd_by, own, now_ny, today))
         except Exception as e:                              # zepsuty ostatni dzień jednego rynku: uwaga, bez jego karty
             META['notes'].append(mask(f"trendy dziennie {s['id']}: {e}"))
+    return (rows, bd) if rows else (None, None)
+
+
+def _td_series_cr(kc, sym, today):
+    """v123: para <SYM>USDT z pliku cen krypto → seria dzienna (doba UTC). Tylko zamknięte doby: wiersz z datą ≥ dziś (UTC) odpada —
+    budowniczy pliku już pomija trwającą dobę, to druga straż. Zamknięcie musi być liczbą > 0; inne wiersze odpadają (brak, nigdy zero).
+    Daty muszą ściśle rosnąć — inaczej ValueError (uwaga w meta, bez karty tej pary). Zwrot w % tylko między kolejnymi dobami
+    kalendarzowymi: luka w danych = brak (None), nigdy zero ani zwrot przez dwie doby. Bez przepływów: f / zf / fu / waluta = brak.
+    Mniej niż 2 wiersze — bez serii (bez karty)."""
+    q = (kc.get('q') or {}).get(sym) if isinstance(kc, dict) else None
+    d = [r for r in ((q or {}).get('d') or []) if isinstance(r, list) and len(r) > 1 and _isnum(r[1]) and r[1] > 0 and _d(r[0]) and _d(r[0]) < today]
+    if len(d) < 2:
+        return None
+    dates = [str(r[0])[:10] for r in d]; px = [r[1] for r in d]
+    if any(a >= b for a, b in zip(dates, dates[1:])):
+        raise ValueError('daty nie rosną')
+    ret = [None] + [(px[i] / px[i - 1] - 1) * 100 if (_d(dates[i]) - _d(dates[i - 1])).days == 1 else None for i in range(1, len(px))]
+    return {'id': sym, 'fam': 'cr', 'grp': None, 'iss': None, 'pub': 0, 'sym': sym, 'cur': None, 'dates': dates, 'flow': None, 'fu': None, 'ret': ret}
+
+
+def build_daily_cr(S):
+    """v123: sygnały dzienne krypto → (wiersze, linie): pary z TR_CR_SYMS, reguła „p” (sam ruch ceny), test na następnej dobie UTC,
+    linie z TD_RULES_CR z własną wersją (v) i datą wdrożenia (since). Brak pliku cen krypto albo żadnej serii → (None, None), nie „zero
+    monet”. Zepsuta seria jednej pary → uwaga w meta, bez jej karty; reszta zostaje. Nie zmienia S. Zegar: _now_utc (w testach podmieniany)."""
+    S = S if isinstance(S, dict) else {}
+    kc = S.get('ceny-krypto') if isinstance(S.get('ceny-krypto'), dict) else None
+    if not kc:
+        return None, None
+    now_utc = _now_utc(); today = now_utc.date()
+    series = []
+    for sym in TR_CR_SYMS:
+        try:
+            s = _td_series_cr(kc, sym, today)
+            if s:
+                series.append(s)
+        except Exception as e:
+            META['notes'].append(mask(f'trendy dziennie krypto {sym}: {e}'))
+    if not series:
+        return None, None
+    lines = {key: [] for key in TD_RULES_CR}; own = {}; good = []
+    for s in series:
+        try:
+            pr = _td_pairs(s['dates'], None, s['ret'], 0, False)
+        except Exception as e:                              # zepsuta seria jednej pary: uwaga, bez jej par i karty
+            META['notes'].append(mask(f"trendy dziennie krypto {s['id']}: {e}")); continue
+        good.append(s)
+        for dt, rule, d, hit in pr:
+            if hit is None:
+                continue
+            if ('cr', rule) in lines:
+                lines[('cr', rule)].append((dt, hit, s['id']))
+            o = own.setdefault((s['id'], rule), [0, 0]); o[0] += hit; o[1] += 1
+    bd = _td_pool(lines, TD_RULES_CR, TD_SINCE_CR)
+    for b in bd:
+        b['v'], b['since'] = TD_VC, TD_SINCE_CR               # linie krypto niosą własną wersję i datę wdrożenia
+    vd_by = {(b['fam'], b['rule']): b['vd'] for b in bd}
+    rows = []
+    for s in good:
+        try:
+            rows.append(_td_row(s, vd_by, own, None, today, now_utc))
+        except Exception as e:
+            META['notes'].append(mask(f"trendy dziennie krypto {s['id']}: {e}"))
     return (rows, bd) if rows else (None, None)
 
 
@@ -4615,6 +4691,13 @@ def build_trendy(S):
     except Exception as e:
         daily['d'] = daily['bd'] = None     # awaria to nie „zero rynków”: null w pliku (strona ukrywa blok), nigdy pusta lista
         META['notes'].append(mask(f'trendy dziennie: {e}'))
+    try:                                  # v123: rodzina krypto — dopisana na końcu d i bd; awaria nie rusza wierszy i linii świata
+        cd, cb = build_daily_cr(S)
+        if cd:
+            daily['d'] = (daily['d'] or []) + cd
+            daily['bd'] = (daily['bd'] or []) + cb
+    except Exception as e:
+        META['notes'].append(mask(f'trendy dziennie krypto: {e}'))
     return {'at': NOW, 'v': 1, 'src': 'CapitalFlowAI — obliczenia z plików tej strony (fundusze, obce, meksyk, instytucje, kursy, etf, cm, krypto, cftc, surowce, ceny)',
             'rules': {'base_min': TR_BASE_MIN, 'base_max': TR_BASE_MAX, 'dir': TR_DIR, 'all': TR_ALL, 'floor': TR_FLOOR, 'strong': TR_STRONG,
                       'exc': TR_EXC, 'day_z': TR_DAY_Z, 'span': TR_SPAN, 'px_min': TR_PX_MIN, 'cr_typ': TR_CR_TYP},

@@ -3852,6 +3852,317 @@ class TrendyDailyV120(unittest.TestCase):
             self.assertEqual([b['vd'] for b in bd], [vd] * 7)
 
 
+class TrendyDailyCrV123(unittest.TestCase):
+    """v123: sygnały dzienne krypto (rodzina „cr”) — doba UTC, 7 dni w tygodniu, na razie tylko ruch ceny (reguła „p”), własna wersja
+    reguły i własny licznik „od wdrożenia”. Świat (wiersze, 7 linii) i część tygodniowa bajt w bajt bez zmian. Brak nie jest zerem, bez sieci."""
+
+    NOW = datetime.datetime(2026, 9, 26, 10, 0, tzinfo=datetime.timezone.utc)   # sobota rano (UTC)
+    NY = datetime.datetime(2026, 9, 26, 6, 0)                                    # sobota rano w Nowym Jorku (bez strefy, jak w TrendyDailyV120)
+    STATES = ('buy', 'sell', 'obs', 'x', 'quiet', 'stale', 'short', 'nodata')
+    KEYS = {'at', 'v', 'src', 'rules', 'f', 'p', 'b', 'dv', 'dsince', 'dr', 'd', 'bd'}
+    A = (0.4, 0.4, -0.8)     # zwroty w kółko: −0,8 % strzela (z ≈ −1,41), następna doba +0,4 % → pudło (kierunek −1)
+    B = (0.4, -0.8, -0.1)    # −0,8 % strzela (z ≈ −1,54), następna doba −0,1 % → trafienie
+
+    def setUp(self):
+        ps = [mock.patch.object(zd, '_now_utc', return_value=self.NOW), mock.patch.object(zd, '_ny_now', return_value=self.NY),
+              mock.patch.object(zd.urllib.request, 'urlopen', side_effect=AssertionError('sieć w teście'))]
+        for p in ps:
+            p.start(); self.addCleanup(p.stop)
+        zd.META['notes'].clear()
+
+    @staticmethod
+    def cdays(n, end='2026-09-25'):
+        """n kolejnych dób kalendarzowych (z sobotami i niedzielami) kończących się dobą end — nie dni sesji jak w TrendyDailyV120."""
+        e = datetime.date.fromisoformat(end)
+        return [(e - datetime.timedelta(days=n - 1 - i)).isoformat() for i in range(n)]
+
+    @classmethod
+    def coin(cls, n=80, end='2026-09-25', last_ret=0.1, pat=None, p0=100.0):
+        """Zamknięcia jednej pary [doba, zamknięcie] jak w data/ceny-krypto.json: zwrot doby i = pat[i % 3] %, ostatnia doba: last_ret %."""
+        pat = pat or cls.A
+        out, p = [], p0
+        for i, d in enumerate(cls.cdays(n, end)):
+            if i:
+                p = p * (1 + (last_ret if i == n - 1 else pat[i % 3]) / 100)
+            out.append([d, round(p, 6)])
+        return out
+
+    @staticmethod
+    def kc(**coins):
+        """Plik cen krypto w kształcie data/ceny-krypto.json: q[SYM] = {'d': [[doba, zamknięcie]], 'vol': […]}."""
+        return {'at': '2026-09-26T02:10:00+00:00', 'quote': 'USDT', 'q': {s: {'d': d, 'vol': []} for s, d in coins.items()}}
+
+    def world(self):
+        """Mały świat v120 (fundusze + rynek tylko z ceną) — do sprawdzenia, że krypto go nie rusza."""
+        W = TrendyDailyV120
+        return {'fundusze': {'f': {'IVV': W.fund(80, last_du=50000), 'GLD': W.fund(80, last_ret=-3.0, iss='ssga'), 'EEM': W.fund(80)}},
+                'ceny': {'q': {'EWC': {'d': W.closes(70)}}}}
+
+    @staticmethod
+    def dump(x):
+        return json.dumps(x, ensure_ascii=False, separators=(',', ':'))   # jak save(): te same bajty co w pliku
+
+    # (a) seria jednej pary
+    def test_series(self):
+        today = datetime.date(2026, 9, 26)
+        rows = self.coin(10, end='2026-09-25', last_ret=1.0)
+        s = zd._td_series_cr(self.kc(BTC=rows), 'BTC', today)
+        self.assertEqual(s['dates'], self.cdays(10)); self.assertIsNone(s['ret'][0])
+        self.assertAlmostEqual(s['ret'][-1], (rows[-1][1] / rows[-2][1] - 1) * 100, places=9)
+        self.assertEqual((s['id'], s['sym'], s['fam'], s['grp'], s['iss'], s['pub'], s['cur'], s['flow'], s['fu']), ('BTC', 'BTC', 'cr', None, None, 0, None, None, None))
+        gap = rows[:5] + rows[6:]                                            # brak doby 6 (indeks 5)
+        s = zd._td_series_cr(self.kc(BTC=gap), 'BTC', today)
+        self.assertEqual(len(s['dates']), 9)
+        self.assertIsNone(s['ret'][5], 'doba po luce: brak, nie zero i nie zwrot przez dwie doby')
+        self.assertAlmostEqual(s['ret'][6], (gap[6][1] / gap[5][1] - 1) * 100, places=9, msg='następna doba po luce — zwykły zwrot')
+        self.assertTrue(all(zd._isnum(x) for i, x in enumerate(s['ret']) if i not in (0, 5)))
+        late = rows + [['2026-09-26', rows[-1][1] * 2], ['2026-09-27', rows[-1][1] * 3]]
+        s = zd._td_series_cr(self.kc(BTC=late), 'BTC', today)
+        self.assertEqual(s['dates'][-1], '2026-09-25', 'doba dzisiejsza (UTC) i późniejsze — odrzucone (niezamknięte)')
+        bad = [list(r) for r in rows]
+        bad[2][1] = 0; bad[3][1] = -5.0; bad[4][1] = float('nan'); bad[6][1] = '101.5'; bad[7][1] = None; bad[8][1] = True
+        bad += [['2026-09-2x', 1.0], 'zły wiersz', ['2026-09-25']]
+        s = zd._td_series_cr(self.kc(BTC=bad), 'BTC', today)
+        self.assertEqual(s['dates'], [rows[i][0] for i in (0, 1, 5, 9)], 'zamknięcia ≤ 0, NaN, tekst, None, bool i złe wiersze odrzucone')
+        self.assertEqual([x is None for x in s['ret']], [True, False, True, True], 'luki po odrzuconych wierszach = brak, nie zero')
+        self.assertIsNone(zd._td_series_cr(self.kc(BTC=rows[:1]), 'BTC', today), 'jeden wiersz — bez serii')
+        self.assertIsNone(zd._td_series_cr(self.kc(BTC=[]), 'BTC', today))
+        self.assertIsNone(zd._td_series_cr(self.kc(BTC=rows), 'ETH', today), 'brak pary w pliku — bez serii')
+        self.assertIsNone(zd._td_series_cr(None, 'BTC', today)); self.assertIsNone(zd._td_series_cr({'q': None}, 'BTC', today))
+        with self.assertRaises(ValueError):
+            zd._td_series_cr(self.kc(BTC=[rows[1], rows[0]] + rows[2:]), 'BTC', today)
+        with self.assertRaises(ValueError):
+            zd._td_series_cr(self.kc(BTC=rows[:3] + [rows[2]] + rows[3:]), 'BTC', today)   # powtórzona doba
+        k0 = self.kc(BTC=[list(r) for r in rows]); k1 = json.loads(json.dumps(k0))
+        zd._td_series_cr(k0, 'BTC', today); self.assertEqual(k0, k1, 'nie zmienia pliku wejściowego')
+        d, bd = zd.build_daily_cr({'ceny-krypto': self.kc(BTC=[rows[1], rows[0]] + rows[2:], ETH=self.coin(80), SOL=self.coin(80))})
+        self.assertEqual([r['id'] for r in d], ['ETH', 'SOL'], 'zepsuta seria BTC: bez karty; pozostałe zostają')
+        self.assertEqual([n for n in zd.META['notes'] if n.startswith('trendy dziennie krypto')], ['trendy dziennie krypto BTC: daty nie rosną'])
+        ds = self.cdays(50); ret = [None] + [0.5 * (-1) ** i for i in range(1, 41)] + [None] * 4 + [3.0, None, 0.5, 0.5, 0.5]
+        self.assertEqual(zd._td_pairs(ds, None, ret, 0, False), [], 'sygnał tuż przed luką: bez pary (wynik = brak)')
+        ret[46] = 0.5
+        self.assertEqual(zd._td_pairs(ds, None, ret, 0, False), [(ds[45], 'p', 1, 1)], 'ta sama doba z wynikiem — para jest')
+
+    # (b) zegar doby UTC
+    def test_clock_utc(self):
+        from zoneinfo import ZoneInfo
+        utc = datetime.timezone.utc
+        self.assertTrue(zd._td_live_cr('2026-09-25', datetime.datetime(2026, 9, 26, 0, 0, tzinfo=utc)), 'doba następna (sobota) trwa')
+        self.assertTrue(zd._td_live_cr('2026-09-25', datetime.datetime(2026, 9, 26, 23, 59, 59, tzinfo=utc)))
+        self.assertFalse(zd._td_live_cr('2026-09-25', datetime.datetime(2026, 9, 27, 0, 0, tzinfo=utc)), 'północ UTC po sobocie — nieaktualne')
+        waw = ZoneInfo('Europe/Warsaw')
+        self.assertTrue(zd._td_live_cr('2026-09-25', datetime.datetime(2026, 9, 27, 1, 59, 59, tzinfo=waw)), 'Warszawa 01:59:59 = 23:59:59 UTC')
+        self.assertFalse(zd._td_live_cr('2026-09-25', datetime.datetime(2026, 9, 27, 2, 0, tzinfo=waw)), 'Warszawa 02:00 = 00:00 UTC')
+        self.assertTrue(zd._td_live_cr('2026-09-25', datetime.datetime(2026, 9, 26, 23, 59, 59)), 'zegar bez strefy = UTC')
+        self.assertFalse(zd._td_live_cr('2026-09-25', datetime.datetime(2026, 9, 27, 0, 0)))
+        self.assertEqual(zd._td_next('2026-09-25').isoformat(), '2026-09-28', 'świat: następna sesja po piątku nadal poniedziałek')
+        d, _ = zd.build_daily_cr({'ceny-krypto': self.kc(BTC=self.coin(80))})
+        r = d[0]
+        self.assertEqual((r['date'], r['nx'], r['live'], r['age']), ('2026-09-25', '2026-09-26', True, 1), 'piątek → sobota (krypto: 7 dni w tygodniu)')
+        with mock.patch.object(zd, '_now_utc', return_value=datetime.datetime(2026, 9, 27, 0, 30, tzinfo=utc)):
+            d, _ = zd.build_daily_cr({'ceny-krypto': self.kc(BTC=self.coin(80), ETH=self.coin(80, last_ret=3.0))})
+        self.assertEqual([(r['st'], r['live'], r['age']) for r in d], [('stale', False, 2)] * 2, 'ok. 00:00–03:00 UTC: przed nowym plikiem karty uczciwie nieaktualne')
+        self.assertEqual((d[1]['rule'], d[1]['dir'], d[1]['side']), ('p', 1, 'none'), 'nieaktualna: reguła policzona do opisu, bez strony')
+        with mock.patch.object(zd, '_now_utc', return_value=datetime.datetime(2026, 9, 27, 3, 0, tzinfo=utc)):
+            d, _ = zd.build_daily_cr({'ceny-krypto': self.kc(BTC=self.coin(81, end='2026-09-26'))})
+        self.assertEqual((d[0]['date'], d[0]['nx'], d[0]['live'], d[0]['age']), ('2026-09-26', '2026-09-27', True, 1), 'sobota → niedziela')
+
+    # (c) budowa: 2 pary × 80 dób, jedna linia z własną wersją i datą wdrożenia
+    def test_build(self):
+        S = {'ceny-krypto': self.kc(ETH=self.coin(80, last_ret=0.1), BTC=self.coin(80, last_ret=3.0))}
+        with mock.patch.object(zd, 'wilson', wraps=zd.wilson) as w:
+            d, bd = zd.build_daily_cr(S)
+        self.assertEqual([r['id'] for r in d], ['BTC', 'ETH'], 'kolejność wg TR_CR_SYMS, nie wg pliku')
+        world_keys = list(zd._td_row(zd._td_series_px({'q': {'EWC': {'d': TrendyDailyV120.closes(70)}}}, 'EWC'), {}, {}, self.NY, self.NOW.date()))
+        for r in d:
+            self.assertEqual(list(r), world_keys, 'ten sam układ pól co karty świata (24)')
+            self.assertEqual((r['fam'], r['id'], r['sym'], r['grp'], r['iss'], r['pub']), ('cr', r['sym'], r['sym'], None, None, 0))
+            for k in ('f', 'zf', 'fu', 'cur'):
+                self.assertIsNone(r[k], (r['id'], k, 'brak przepływu = None, nigdy 0'))
+            self.assertIn('"f":null,"cur":null,"fu":null,"zf":null', self.dump(r))
+            self.assertIn(r['rule'], ('p', 'none')); self.assertNotEqual(r['rule'], 'x'); self.assertLessEqual(r['str'], 2); self.assertIn(r['st'], self.STATES)
+            self.assertTrue(zd._isnum(r['r']) and zd._isnum(r['zp']))
+        b_, e_ = d
+        self.assertEqual((b_['rule'], b_['dir'], b_['str'], b_['st'], b_['side'], b_['vd']), ('p', 1, 2, 'obs', 'buy', 'short'), 'BTC +3 %: mocny ruch, szara karta (linia za krótka)')
+        self.assertEqual((e_['rule'], e_['dir'], e_['str'], e_['st'], e_['side'], e_['vd'], e_['ik'], e_['in']), ('none', 0, 0, 'quiet', 'none', None, None, None))
+        self.assertEqual(len(bd), 1)
+        b = bd[0]
+        self.assertEqual((b['fam'], b['rule'], b['v'], b['since']), ('cr', 'p', 1, '2026-09-28'))
+        self.assertEqual(list(b)[-3:], ['vd', 'v', 'since'], 'v i since dopisane na końcu linii')
+        sig = [x for i, x in enumerate(self.cdays(80)) if 41 <= i <= 78 and i % 3 == 2]   # −0,8 % z ≥ 40 poprzednimi zwrotami, wynik w pliku
+        self.assertEqual((b['k'], b['n'], b['days'], b['m'], b['from'], b['to']), (0, 2 * len(sig), len(sig), 2, sig[0], sig[-1]), 'wspólne doby: dni < par')
+        self.assertLess(b['days'], b['n']); self.assertEqual((b['p'], b['vd'], b['need']), (0.0, 'short', 100 - len(sig)), '0 trafień przy n > 0 to prawdziwe 0')
+        w.assert_any_call(b['k'], b['n'], n_eff=b['days'])
+        self.assertEqual(b['ci'], list(zd.wilson(b['k'], b['n'], n_eff=b['days'])))
+        self.assertEqual((b_['ik'], b_['in']), (0, len(sig)), 'BTC: własne pary reguły p')
+        self.assertEqual((b['lk'], b['ln'], b['ldays']), (0, 0, 0), 'przed wdrożeniem — licznik pusty')
+        self.assertNotRegex(self.dump([d, bd]).lower(), r'binance|coinbase|coin ?metrics|coingecko|defillama|sosovalue', 'bez nazw dostawców')
+
+    def test_since_counter(self):
+        """Licznik „od wdrożenia” linii krypto liczy tylko doby sygnału ≥ TD_SINCE_CR — niezależnie od TD_SINCE świata."""
+        with mock.patch.object(zd, '_now_utc', return_value=datetime.datetime(2026, 10, 10, 10, 0, tzinfo=datetime.timezone.utc)):
+            S = {'ceny-krypto': self.kc(BTC=self.coin(80, end='2026-10-09', pat=self.A), ETH=self.coin(80, end='2026-10-09', pat=self.B))}
+            d, bd = zd.build_daily_cr(S)
+            with mock.patch.object(zd, 'TD_SINCE', '2020-01-01'):
+                d2, bd2 = zd.build_daily_cr(S)
+            with mock.patch.object(zd, 'TD_SINCE_CR', '2020-01-01'):
+                d3, bd3 = zd.build_daily_cr(S)
+        b = bd[0]
+        pr = []
+        for sym in ('BTC', 'ETH'):
+            s = zd._td_series_cr(S['ceny-krypto'], sym, datetime.date(2026, 10, 10))
+            pr += zd._td_pairs(s['dates'], None, s['ret'], 0, False)
+        late = [(p[0], p[3]) for p in pr if p[0] >= '2026-09-28']
+        self.assertEqual((b['lk'], b['ln'], b['ldays']), (sum(h for _, h in late), len(late), len({x for x, _ in late})))
+        self.assertEqual((b['lk'], b['ln'], b['ldays']), (3, 7, 7), 'BTC: 4 pudła, ETH: 3 trafienia od 28.09 (różne doby)')
+        self.assertLess(b['ln'], b['n']); self.assertEqual(b['n'], len(pr)); self.assertEqual(b['days'], b['n'], 'różne doby sygnałów: dni = pary')
+        self.assertEqual(bd2, bd, 'podmiana TD_SINCE (świat) nie zmienia licznika krypto')
+        self.assertEqual((bd3[0]['ln'], bd3[0]['lk']), (b['n'], b['k']), 'licznik krypto idzie za TD_SINCE_CR')
+        self.assertEqual(bd3[0]['since'], '2020-01-01')
+
+    # (d) build_trendy z plikiem cen krypto i bez niego
+    def test_trendy_with_and_without(self):
+        import copy
+        S = dict(self.world(), **{'ceny-krypto': self.kc(SOL=self.coin(80, last_ret=3.0), BTC=self.coin(80))})
+        S0 = copy.deepcopy(S)
+        out = zd.build_trendy(S)
+        ref = zd.build_trendy({k: v for k, v in S.items() if k != 'ceny-krypto'})
+        self.assertEqual(S, S0, 'build_trendy nie zmienia wejścia')
+        self.assertEqual(set(out), self.KEYS); self.assertEqual(set(ref), self.KEYS, 'bez nowych kluczy na górze pliku')
+        for k in ('at', 'v', 'src', 'rules', 'f', 'p', 'b', 'dv', 'dsince', 'dr'):
+            self.assertEqual(self.dump(out[k]), self.dump(ref[k]), f'{k}: bajt w bajt')
+        n = len(ref['d'])
+        self.assertEqual(n, 4); self.assertEqual(len(ref['bd']), 7)
+        self.assertEqual(self.dump(out['d'][:n]), self.dump(ref['d']), 'wiersze świata bez zmian i na początku')
+        self.assertEqual(self.dump(out['bd'][:7]), self.dump(ref['bd']), '7 linii świata bez zmian i na początku')
+        self.assertEqual([(r['id'], r['fam']) for r in out['d'][n:]], [('BTC', 'cr'), ('SOL', 'cr')], 'dopisane tylko karty krypto, na końcu, wg TR_CR_SYMS')
+        self.assertEqual([(b['fam'], b['rule'], b['v'], b['since']) for b in out['bd'][7:]], [('cr', 'p', 1, '2026-09-28')])
+        self.assertFalse(any(r['fam'] == 'cr' for r in ref['d']))
+        cut = dict(out, d=out['d'][:n], bd=out['bd'][:7])
+        self.assertEqual(self.dump(cut), self.dump(ref), 'plik bez wpisów krypto = plik bez pliku cen krypto (bajt w bajt)')
+        self.assertEqual(out['src'], ref['src']); self.assertNotIn('ceny-krypto', out['src'], 'src bez zmian (pytanie otwarte 3)')
+        self.assertEqual([n_ for n_ in zd.META['notes'] if 'krypto' in n_], [])
+
+    # (e) awarie izolowane
+    def test_failures_isolated(self):
+        S = dict(self.world(), **{'ceny-krypto': self.kc(BTC=self.coin(80), ETH=self.coin(80))})
+        ref = zd.build_trendy({k: v for k, v in S.items() if k != 'ceny-krypto'})
+        with mock.patch.object(zd, 'build_daily', side_effect=RuntimeError('awaria świata')):
+            out = zd.build_trendy(S)
+        self.assertEqual([(r['id'], r['fam']) for r in out['d']], [('BTC', 'cr'), ('ETH', 'cr')], 'świat padł: d = same karty krypto')
+        self.assertEqual([(b['fam'], b['rule']) for b in out['bd']], [('cr', 'p')])
+        self.assertIn('trendy dziennie: awaria świata', zd.META['notes']); self.assertEqual(set(out), self.KEYS)
+        zd.META['notes'].clear()
+        with mock.patch.object(zd, 'build_daily_cr', side_effect=RuntimeError('awaria krypto')):
+            out = zd.build_trendy(S)
+        self.assertEqual(self.dump(out), self.dump(ref), 'krypto padło: plik dokładnie jak bez krypto')
+        self.assertEqual([n for n in zd.META['notes'] if 'krypto' in n], ['trendy dziennie krypto: awaria krypto'])
+        zd.META['notes'].clear()
+        with mock.patch.object(zd, 'build_daily', side_effect=RuntimeError('a')), mock.patch.object(zd, 'build_daily_cr', side_effect=RuntimeError('b')):
+            out = zd.build_trendy(S)
+        self.assertEqual((out['d'], out['bd']), (None, None), 'obie części padły — null/null, nie puste listy')
+        zd.META['notes'].clear()
+        real_pairs, real_row = zd._td_pairs, zd._td_row
+        calls = []
+
+        def pairs(*a, **k):
+            calls.append(1)
+            if len(calls) == 1:
+                raise RuntimeError('zła seria')
+            return real_pairs(*a, **k)
+
+        def row(s, *a):
+            if s['id'] == 'SOL':
+                raise ValueError('zły dzień')
+            return real_row(s, *a)
+        with mock.patch.object(zd, '_td_pairs', side_effect=pairs), mock.patch.object(zd, '_td_row', side_effect=row):
+            d, bd = zd.build_daily_cr({'ceny-krypto': self.kc(BTC=self.coin(80), ETH=self.coin(80), SOL=self.coin(80))})
+        self.assertEqual([r['id'] for r in d], ['ETH'], 'BTC (test wstecz) i SOL (karta) bez kart — ETH zostaje')
+        self.assertEqual(len(bd), 1)
+        self.assertEqual(zd.META['notes'], ['trendy dziennie krypto BTC: zła seria', 'trendy dziennie krypto SOL: zły dzień'])
+        zd.META['notes'].clear()
+        with mock.patch.object(zd, '_td_row', side_effect=RuntimeError('wszystko')):
+            self.assertEqual(zd.build_daily_cr({'ceny-krypto': self.kc(BTC=self.coin(80))}), (None, None), 'żadnej karty — (None, None), nie []')
+
+    # (f) brak pliku, zły plik, za krótkie serie
+    def test_absent(self):
+        cases = ({}, None, {'ceny-krypto': None}, {'ceny-krypto': []}, {'ceny-krypto': {}}, {'ceny-krypto': {'q': None}},
+                 {'ceny-krypto': {'q': {}}}, {'ceny-krypto': {'q': ['BTC']}}, {'ceny-krypto': {'at': 'x'}},
+                 {'ceny-krypto': self.kc(BTC=self.coin(1), ETH=[], SOL=[['2026-09-26', 1.0], ['2026-09-27', 2.0]])})
+        for S in cases:
+            self.assertEqual(zd.build_daily_cr(S), (None, None), S)
+            out = zd.build_trendy(S)
+            self.assertEqual((out['d'], out['bd']), (None, None), f'bez świata i bez krypto: null/null ({S})')
+        self.assertTrue(any(n.startswith('trendy dziennie krypto BTC:') for n in zd.META['notes']), 'q nie jest słownikiem — uwaga w meta, nie cisza')
+        zd.META['notes'].clear()
+        ref = zd.build_trendy(self.world())
+        out = zd.build_trendy(dict(self.world(), **{'ceny-krypto': {'q': {}}}))
+        self.assertEqual(self.dump(out), self.dump(ref), 'plik cen krypto bez par — plik trendów jak dziś')
+
+    # (g) stałe
+    def test_constants(self):
+        self.assertEqual(zd.TD_VC, 1); self.assertEqual(zd.TD_SINCE_CR, '2026-09-28'); self.assertEqual(zd.TD_RULES_CR, (('cr', 'p'),))
+        self.assertEqual(len(zd.TD_RULES), 7); self.assertEqual(zd.TD_V, 1); self.assertEqual(zd.TD_SINCE, '2026-09-28')
+        self.assertEqual(zd.TD_EXCLUDED, ('br', 'mx', 'th', 'in_bd', 'jp', 'tr', 'cf', 'cs', 'cr', 'ix'), 'bez zmian: zestaw reguł wersji TD_V')
+        self.assertEqual(zd._td_rules()['excluded'], list(zd.TD_EXCLUDED))
+        self.assertEqual(zd.TR_CR_SYMS, ('BTC', 'ETH', 'XRP', 'BNB', 'SOL', 'DOGE', 'ADA', 'TRX', 'LINK', 'AVAX'), 'bez stablecoinów (cena ≈ 1 USD)')
+        w = zd._td_pool({})
+        self.assertEqual([(b['fam'], b['rule']) for b in w], list(zd.TD_RULES)); self.assertTrue(all('v' not in b and 'since' not in b for b in w))
+        c = zd._td_pool({}, zd.TD_RULES_CR, zd.TD_SINCE_CR)
+        self.assertEqual(len(c), 1)
+        self.assertEqual((c[0]['fam'], c[0]['rule'], c[0]['vd'], c[0]['need'], c[0]['n'], c[0]['p'], c[0]['ci']), ('cr', 'p', 'short', 100, 0, None, [None, None]))
+        with mock.patch.object(zd, 'TD_RULES', (('eq', 'f'),)):
+            self.assertEqual(len(zd._td_pool({})), 1, 'domyślne rules = TD_RULES w chwili wywołania (testy z podmianą działają)')
+        lines = {('cr', 'p'): [('2026-09-27', 1, 'BTC'), ('2026-09-28', 1, 'BTC'), ('2026-09-29', 0, 'ETH'), ('2026-09-29', 1, 'BTC')]}
+        b = zd._td_pool(lines, zd.TD_RULES_CR, zd.TD_SINCE_CR)[0]
+        self.assertEqual((b['k'], b['n'], b['days'], b['m'], b['lk'], b['ln'], b['ldays']), (3, 4, 3, 2, 2, 3, 2))
+        with mock.patch.object(zd, 'TD_SINCE', '2026-01-01'):
+            self.assertEqual(zd._td_pool(lines, zd.TD_RULES_CR, zd.TD_SINCE_CR)[0]['ln'], 3, 'since podane jawnie — TD_SINCE nie ma wpływu')
+            self.assertEqual(zd._td_pool({('eq', 'f'): lines[('cr', 'p')]})[0]['ln'], 4, 'świat: domyślne since = TD_SINCE w chwili wywołania')
+        self.assertFalse(any(b['fam'] == 'cr' for b in zd._td_pool(lines)), 'linie świata nie biorą par krypto')
+
+    # (h) stany kart
+    def test_states(self):
+        utc = datetime.timezone.utc
+        miss_last = self.coin(80, last_ret=3.0); miss_last[-1][1] = None                # brak zamknięcia 25.09 → karta z 24.09
+        miss_prev = self.coin(80, last_ret=3.0); miss_prev[-2][1] = None                # brak zamknięcia 24.09 → zwrot 25.09 nieznany
+        S = {'ceny-krypto': self.kc(BTC=miss_prev, ETH=self.coin(41, last_ret=3.0), XRP=self.coin(42, last_ret=3.0),
+                                    BNB=self.coin(80, end='2026-09-24', last_ret=3.0), SOL=miss_last, DOGE=self.coin(80, last_ret=-3.0),
+                                    ADA=self.coin(80, last_ret=0.8))}
+        d, bd = zd.build_daily_cr(S)
+        by = {r['id']: r for r in d}
+        self.assertEqual(list(by), ['BTC', 'ETH', 'XRP', 'BNB', 'SOL', 'DOGE', 'ADA'])
+        t = by['BTC']
+        self.assertEqual((t['date'], t['st'], t['r'], t['zp'], t['rule'], t['dir'], t['side'], t['str']), ('2026-09-25', 'nodata', None, None, 'none', 0, 'none', 0),
+                         'brak poprzedniego zamknięcia: zwrot doby = brak (nie 0), karta „brak danych”')
+        self.assertEqual((by['ETH']['st'], by['ETH']['zp'], by['ETH']['rule']), ('short', None, 'none'), '39 wcześniejszych zwrotów — za mało historii')
+        self.assertEqual((by['XRP']['st'], by['XRP']['rule'], by['XRP']['str']), ('obs', 'p', 2), '40 wcześniejszych zwrotów — wystarczy')
+        s = by['BNB']
+        self.assertEqual((s['st'], s['rule'], s['dir'], s['str'], s['side'], s['live'], s['nx'], s['age'], s['vd']), ('stale', 'p', 1, 2, 'none', False, '2026-09-25', 2, 'short'),
+                         'dane z 24.09 w sobotę: nieaktualne, reguła nadal policzona')
+        m = by['SOL']
+        self.assertEqual((m['date'], m['st'], m['age']), ('2026-09-24', 'stale', 2), 'brak zamknięcia 25.09: karta z 24.09, nie zwrot 0')
+        self.assertEqual((by['DOGE']['st'], by['DOGE']['side'], by['DOGE']['dir']), ('obs', 'sell', -1))
+        self.assertEqual((by['ADA']['st'], by['ADA']['str'], by['ADA']['rule']), ('obs', 1, 'p'), 'ruch ≥ 1 rozrzutu, < 2 — siła 1')
+        for r in d:
+            self.assertEqual(r['side'], ('buy' if r['dir'] > 0 else 'sell') if r['st'] in ('buy', 'sell', 'obs') else 'none', r['id'])
+            if r['st'] in ('buy', 'sell', 'obs'):
+                self.assertTrue(r['live']); self.assertNotEqual(r['dir'], 0)
+        base = zd._td_pool({}, zd.TD_RULES_CR, zd.TD_SINCE_CR)
+        S2 = {'ceny-krypto': self.kc(BTC=self.coin(80, last_ret=3.0), ETH=self.coin(80, last_ret=-3.0))}
+        for vd in ('anti', 'none', 'short', 'edge'):
+            with mock.patch.object(zd, '_td_pool', return_value=[dict(b, vd=vd) for b in base]):
+                d, bd = zd.build_daily_cr(S2)
+            by = {r['id']: r for r in d}
+            exp = ('buy', 'sell') if vd == 'edge' else ('obs', 'obs')
+            self.assertEqual((by['BTC']['st'], by['BTC']['side'], by['BTC']['dir'], by['BTC']['vd']), (exp[0], 'buy', 1, vd), vd)
+            self.assertEqual((by['ETH']['st'], by['ETH']['side'], by['ETH']['dir'], by['ETH']['vd']), (exp[1], 'sell', -1, vd), 'anti: obserwacja po stronie kierunku, nigdy odwrotnie')
+            self.assertEqual([(b['vd'], b['v'], b['since']) for b in bd], [(vd, 1, '2026-09-28')])
+        with mock.patch.object(zd, '_now_utc', return_value=datetime.datetime(2026, 9, 27, 0, 0, tzinfo=utc)):
+            d, _ = zd.build_daily_cr(S2)
+        self.assertEqual([r['st'] for r in d], ['stale', 'stale'], 'koniec soboty UTC — karty z piątku nieaktualne')
+
+
 class ObceV91(unittest.TestCase):
     """v91: Indie, Tajwan, Hongkong co godzinę; Brazylia, Turcja, ThaiBMA najwyżej co 3 h (bez zapytania, gdy część świeża i bez błędu)."""
 

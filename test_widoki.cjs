@@ -4528,7 +4528,7 @@ test('v120 (poprawki po przeglądzie): liczba bez z ≠ brak danych; „strzeli�
 
 test('v120.1: TRENDY — sekcja dzienna przed tygodniowym wprowadzeniem; tytuł i podtytuł global o następnej sesji (EXTRA115 ×10)', () => {
   assert.ok(html.includes("w.innerHTML=head+dly+(dly?`<h2 class=\"trd-wk mtxt\">${t('trd.d.wk')}</h2>`:'')+disc+(!cr?"), 'dzienna sekcja pierwsza, potem „Tło” i tygodniowe wprowadzenie');
-  assert.ok(html.includes("<span class=\"gsub\">${t(cr?'trd.sub':'trd.subd')}</span>"), 'widok krypto zachowuje dotychczasowy podtytuł');
+  assert.ok(html.includes("<span class=\"gsub\">${t(cr?'trd.subc':'trd.subd')}</span>"), 'v123.1: widok krypto ma własny podtytuł o następnej dobie');
   const apl = [...html.matchAll(/for\(const l in (EXTRA\d+)\)if\(I18N\[l\]\)Object\.assign\(I18N\[l\],\1\[l\]\);\n/g)].map(m => m[1]);
   assert.ok(apl.indexOf('EXTRA115') > apl.indexOf('EXTRA80') && apl.indexOf('EXTRA80') >= 0, 'EXTRA115 nałożony po EXTRA80 — nadpisuje trd.h1 (kolejne słowniki nie mają trd.h1)');
   for (const L of ['pl', 'en', 'de', 'es', 'fr', 'it', 'pt', 'ru', 'zh', 'ja']) {
@@ -4913,4 +4913,181 @@ test('v121: aukcje — słownik w 10 językach bez nazw dostawców, sekcja po ar
   assert.equal(html.split('/* ===================== v121: AUKCJE PAPIERÓW SKARBOWYCH USA').length, 2);
   const R = v96src.render('pl', false, null), J = R.txtJakCzytac();
   assert.ok(J.includes('<span>aukcje papierów skarbowych USA (popyt)</span>') && R.JAK_ICO['aukcje papierów skarbowych USA (popyt)'] === 'us', 'Metodologia: wiersz z flagą USA');
+});
+
+/* v123: TRENDY — sygnały dzienne krypto (wiersze `d` z fam „cr”, linia `cr·p` w `bd`): widok krypto tej samej sekcji dziennej */
+const trdV123 = (() => {
+  const {row, line} = trdV120;
+  const cr = o => row(Object.assign({fam: 'cr', sym: o.id, nx: '2026-09-26'}, o));
+  const rows = [
+    cr({id: 'BTC', r: 2.1, zp: 1.3, rule: 'p', dir: 1, side: 'buy', str: 1, st: 'obs', vd: 'none', ik: 51, in: 105}),
+    cr({id: 'ETH', r: 0.13, zp: 0.04, st: 'quiet', ik: 44, in: 90}),
+    cr({id: 'SOL', date: '2026-09-24', nx: '2026-09-25', live: false, age: 2, r: 4.4, zp: 1.5, rule: 'p', dir: 1, side: 'none', str: 1, st: 'stale', vd: 'none', ik: 50, in: 104}),
+    cr({id: 'DOGE', r: 3.3, zp: null, st: 'short'})];
+  const ln = line({fam: 'cr', rule: 'p', k: 440, n: 912, days: 252, from: '2025-09-12', to: '2026-09-24', p: 48.2, ci: [42.1, 54.4], h1: 48.5, h2: 48, m: 10, need: 0, vd: 'none', v: 1, since: '2026-09-29'});
+  const both = extra => trdV120.data(Object.assign({d: trdV120.d.concat(rows), bd: trdV120.bd.concat([ln])}, extra || {}));
+  const sec = h => { const i = h.indexOf('<section class="panel pcard trd-d" id="trd-dailyc">'); return i < 0 ? '' : h.slice(i, h.indexOf('</details></section>', i) + 20); };
+  const card = (h, sym) => { const i = h.indexOf('<span>' + sym + '</span>'); if (i < 0) return ''; const a = h.lastIndexOf('<div class="etfk trk">', i); return h.slice(a, h.indexOf('</div>', i) + 6); };
+  const dict = l => { const o = {}; for (const m of html.matchAll(/const (EXTRA(?:8\d|9\d|1\d\d))=/g)) { const x = html.indexOf(m[0]); Object.assign(o, JSON.parse(html.slice(x + m[0].length, html.indexOf(';\n', x)))[l] || {}); } return o; };
+  return {cr, rows, ln, both, sec, card, dict};
+})();
+
+test('v123: EXTRA116 — 10 języków (pl pierwszy, en drugi), te same klucze i pola, tylko trd.dc.* + trd.d.fam.cr + trd.d.m.6, nałożony po EXTRA110 i EXTRA114, literały trd.dc.* w bloku v89, bez „kupuj/sprzedawaj” i bez nazw dostawców; trd.d.m.6 bez „brak krypto”', () => {
+  const a = 'const EXTRA116=', x0 = html.indexOf(a), fl = 'for(const l in EXTRA116)if(I18N[l])Object.assign(I18N[l],EXTRA116[l]);\n';
+  assert.ok(x0 > html.indexOf('for(const l in EXTRA114)') && html.indexOf('for(const l in EXTRA114)') > 0 && html.indexOf(fl) > x0, 'słownik po poprzednim ostatnim (EXTRA114), linia nakładania po nim');
+  assert.equal(html.split('const EXTRA116=').length, 2, 'jeden słownik EXTRA116'); assert.equal(html.split(fl).length, 2, 'jedna linia nakładania');
+  const apl = [...html.matchAll(/for\(const l in (EXTRA\d+)\)if\(I18N\[l\]\)Object\.assign\(I18N\[l\],\1\[l\]\);\n/g)].map(m => m[1]);
+  assert.ok(apl.indexOf('EXTRA110') >= 0 && apl.indexOf('EXTRA116') > apl.indexOf('EXTRA110') && apl.indexOf('EXTRA116') > apl.indexOf('EXTRA114'), 'nałożony po EXTRA110 (nadpisuje trd.d.m.6) i po EXTRA114');
+  const D = JSON.parse(html.slice(x0 + a.length, html.indexOf(';\n', x0))), L10 = ['pl', 'en', 'de', 'es', 'fr', 'it', 'pt', 'ru', 'zh', 'ja'];
+  assert.deepEqual(Object.keys(D), L10, 'kolejność języków');
+  const K = Object.keys(D.pl).sort(); assert.equal(K.length, 21, 'liczba kluczy');
+  assert.ok(K.every(k => k.startsWith('trd.dc.') || k === 'trd.d.fam.cr' || k === 'trd.d.m.6'), 'tylko trd.dc.*, trd.d.fam.cr, trd.d.m.6: ' + K);
+  const ph = s => (s.match(/\{\w+\}/g) || []).sort().join(',');
+  for (const l of L10) { assert.deepEqual(Object.keys(D[l]).sort(), K, 'klucze ' + l); for (const k of K) { assert.ok(typeof D[l][k] === 'string' && D[l][k].trim().length > 0, l + ' ' + k); assert.equal(ph(D[l][k]), ph(D.pl[k]), 'pola ' + l + ' ' + k); } }
+  const b0 = html.indexOf('/* v89: TRENDY — początek'), b1 = html.indexOf('/* v89: TRENDY — koniec */'), blk = html.slice(b0, b1);
+  const lit = [...new Set([...blk.matchAll(/'(trd\.dc\.[A-Za-z0-9_.]+)'/g)].map(m => m[1]).filter(k => !/[._]$/.test(k)))];
+  assert.ok(lit.length >= 15, 'literały trd.dc.* w bloku: ' + lit.length); for (const k of lit) assert.ok(D.pl[k] && D.en[k], 'brak klucza ' + k);
+  for (const k of ['trd.dc.buy.sub', 'trd.dc.sell.sub', 'trd.d.fam.cr']) assert.ok(D.pl[k] && D.en[k], k + ' (klucz składany w kodzie)');
+  for (const i of ['1', '2', '3', '4', '5', '6']) assert.ok(D.pl['trd.dc.m.' + i] && D.en['trd.dc.m.' + i], 'trd.dc.m.' + i);
+  const bad = /kupuj(?![a-ząćęłńóśźż])|sprzedawaj(?![a-ząćęłńóśźż])|warto kupi|okazj|prognoz|gwarant|na pewno|pewny zysk|wzrośnie|spadnie|buy now|must buy|sure profit|will rise|will fall|guarantee|forecast/i;
+  for (const l of ['pl', 'en']) for (const k of K) { if (!k.startsWith('trd.dc.') || k.startsWith('trd.dc.m.') || k === 'trd.dc.b.sub' || k === 'trd.dc.b.note') continue; assert.doesNotMatch(D[l][k], bad, `${l} ${k}: ${D[l][k]}`); }
+  const prov = /binance|coinbase|coin ?metrics|defillama|sosovalue|coingecko|ishares|ssga/i; for (const l of L10) for (const k of K) assert.doesNotMatch(D[l][k], prov, `${l} ${k}`);
+  assert.ok(D.pl['trd.dc.k.of'] === '{e} z {n}' && D.en['trd.dc.k.of'] === '{e} of {n}' && D.pl['trd.d.fam.cr'] === 'krypto', '„0 z 1” to wartość; rodzina „krypto”');
+  assert.ok(/UTC/.test(D.pl['trd.dc.t']) && /UTC/.test(D.pl['trd.dc.nx']) && /UTC/.test(D.pl['trd.dc.why.stale']), 'doba UTC w tytule, dacie i „nieaktualne”');
+  assert.ok(D.pl['trd.dc.m.3'].includes('7 dni w tygodniu') && D.pl['trd.dc.m.1'].includes('nigdy zero') && D.pl['trd.dc.m.5'].includes('Stablecoinów'), 'metoda: 7 dni, brak ≠ zero, stablecoiny bez kart');
+  /* scalony słownik (wszystkie słowniki w kolejności nakładania): trd.d.m.6 ze słownika v123 — bez „brak krypto”, z odesłaniem do widoku krypto */
+  for (const l of L10) assert.equal(v96src.I18N[l]['trd.d.m.6'], D[l]['trd.d.m.6'], 'scalone trd.d.m.6 = EXTRA116 (' + l + ')');
+  assert.ok(!v96src.I18N.pl['trd.d.m.6'].includes('brak krypto') && v96src.I18N.pl['trd.d.m.6'].includes('Krypto ma osobną regułę w widoku krypto') && !/no crypto/i.test(v96src.I18N.en['trd.d.m.6']), 'trd.d.m.6: krypto ma osobną regułę');
+  assert.ok(v96src.I18N.pl['trd.d.m.6'].includes('brak indeksów oraz rynków z opóźnioną publikacją (Brazylia, Meksyk, Tajlandia, dług Indii)'), 'reszta zdania bez zmian');
+  for (const l of L10) { const tt = v96src.tFor(l); assert.ok(tt('trd.dc.t', {d: 'X'}).includes('X') && tt('trd.dc.k.of', {e: 0, n: 1}).includes('0') && tt('trd.dc.k.of', {e: 0, n: 1}).includes('1'), l); }
+});
+
+test('v123: widok global — bajt w bajt ten sam HTML z wierszami i linią krypto w pliku i bez nich (także z ikonami i słownikiem pl); linia świata z fam „cr” nie dociera do świata', () => {
+  const {make} = trdV96, {data, line} = trdV120, {rows, ln, both} = trdV123;
+  const DP = trdV123.dict('pl'), tp = (k, o) => (DP[k] || k).replace(/\{(\w+)\}/g, (_, n) => o && o[n] !== undefined ? o[n] : '');
+  for (const [ico, tt] of [[false, undefined], [true, undefined], [false, tp]]) {
+    const a = make({mode: 'trendy'}, ico, tt), b = make({mode: 'trendy'}, ico, tt); a.trdApply(data()); b.trdApply(both());
+    assert.ok(a.el.innerHTML.includes('id="trd-daily"') && !b.el.innerHTML.includes('trd-dailyc') && !b.el.innerHTML.includes('trd.dc.'), 'global: bez sekcji i tekstów krypto');
+    assert.equal(b.el.innerHTML, a.el.innerHTML, 'global bez zmian (ikony: ' + ico + ', słownik: ' + !!tt + ')');
+  }
+  /* wiersze krypto przed wierszami świata, linie cr·f / cr·fp / cr·p z przewagą między liniami świata — świat nadal bez zmian */
+  const extra = [line({fam: 'cr', rule: 'f', k: 90, n: 100, days: 150, vd: 'edge'}), line({fam: 'cr', rule: 'fp', k: 90, n: 100, days: 150, vd: 'edge'}), Object.assign({}, ln, {vd: 'edge', k: 700})];
+  const a = make({mode: 'trendy'}), b = make({mode: 'trendy'}); a.trdApply(data());
+  b.trdApply(data({d: rows.concat(trdV120.d), bd: extra.slice(0, 2).concat(trdV120.bd.slice(0, 3), extra.slice(2), trdV120.bd.slice(3))}));
+  assert.equal(b.el.innerHTML, a.el.innerHTML, 'kolejność i linie krypto bez wpływu na świat');
+  assert.equal((a.el.innerHTML.slice(a.el.innerHTML.indexOf('id="trd-dbd"'), a.el.innerHTML.indexOf('id="trd-dmethod"')).match(/<div class="etfk trk">/g) || []).length, 7, '7 linii świata');
+});
+
+test('v123: widok krypto — sekcja dzienna krypto nad „Tło”: kafle 1 / 0 / 3 / „0 z 1”, licznik od wdrożenia z linii krypto, BTC szara obserwacja ▲ z logo, SOL nieaktualna (doba UTC), 1 linia, metoda krypto; tygodniowe kafle krypto zostają', () => {
+  const {make} = trdV96, {both, sec, card} = trdV123, st = {mode: 'trendy', trdv: 'crypto'}, f = make(st, true); f.trdApply(both()); const g = f.el.innerHTML, c = sec(g);
+  const i0 = g.indexOf('id="trd-dailyc"'), iw = g.indexOf('<h2 class="trd-wk mtxt">trd.d.wk</h2>'), ik = g.indexOf('trd.kc.in'), inc = g.indexOf('trd.b.nocr');
+  assert.ok(c && i0 > 0 && iw > i0 && ik > iw && inc > ik, 'sekcja krypto, potem „Tło”, kafle tygodnia krypto i nota tygodniowa: ' + [i0, iw, ik, inc]);
+  assert.ok(!g.includes('id="trd-daily"') && !g.includes('trd.d.nocr') && !g.includes('trd.d.t{'), 'bez sekcji świata i bez dawnej noty');
+  assert.ok(c.includes('<h2>trd.dc.t{"d":"') && c.includes('<p class="pnote">trd.dc.sub</p><p class="pnote"><b>trd.d.disc</b></p><p class="pnote trd-dlg"><i class="tdot pos"></i><i class="tdot neg"></i><i class="tdot neu"></i><i class="tdot"></i> trd.d.lg</p>'), 'tytuł z datą, podtytuł, ostrzeżenie, legenda');
+  assert.ok(/<h2>trd\.dc\.t\{"d":"[^"]*25[^"]*"\}<\/h2>/.test(c), 'data tytułu = najnowsza aktualna doba krypto (25.09)');
+  assert.ok(!c.includes('trd.px.') && !c.includes('trd.s.fe_') && !c.includes('<small>IVV</small>') && !c.includes('<small>EWZ</small>'), 'bez rynków świata w sekcji krypto');
+  const iB = c.indexOf('trd.d.buy.t'), iS = c.indexOf('trd.d.sell.t'), iR = c.indexOf('id="trd-drestc"'), iP = c.indexOf('id="trd-dbdc"'), iM = c.indexOf('id="trd-dmethodc"');
+  assert.ok(iB > 0 && iB < iS && iS < iR && iR < iP && iP < iM, 'kolejność: kupno, sprzedaż, bez sygnału, skuteczność, metoda: ' + [iB, iS, iR, iP, iM]);
+  assert.ok(c.includes('<h3 class="mtxt"><i class="tg pos">▲</i><b>trd.d.buy.t</b></h3><p class="pnote">trd.dc.buy.sub</p><div class="etfkpis">') && c.includes('<h3 class="mtxt"><i class="tg neg">▼</i><b>trd.d.sell.t</b></h3><p class="pnote">trd.dc.sell.sub</p><p class="pnote">trd.d.empty</p>'), 'listy: podtytuły krypto, pusta strona sprzedaży = zdanie');
+  /* kafle — tylko wiersze krypto */
+  assert.ok(c.includes('trd.d.k.buy</span></div><div class="k-val">1</div><small class="mtxt">BTC</small>') && c.includes('trd.d.k.sell</span></div><div class="k-val">0</div><small class="mtxt">trd.d.k.empty</small>'), 'kafle stron: 1 (BTC, szary) / 0');
+  assert.ok(c.includes('trd.d.k.none</span></div><div class="k-val">3</div><small class="mtxt">trd.d.k.nline{"q":1,"x":0,"s":1,"o":1}</small>'), 'bez sygnału: 3 (spokojny, nieaktualny, za mało historii)');
+  assert.ok(c.includes('trd.d.k.rules</span></div><div class="k-val">trd.dc.k.of{"e":0,"n":1}</div>'), 'kafel reguł: „0 z 1”');
+  const oos = /trd\.d\.k\.oos0\{"d":"([^"]*)"\}/.exec(c); assert.ok(oos && /29/.test(oos[1]) && !/28/.test(oos[1]), 'od wdrożenia — data z linii krypto (29.09), nie dsince świata (28.09): ' + (oos && oos[1]));
+  assert.ok(c.includes('<p class="pnote">trd.dc.none.all</p><h3 class="mtxt"><i class="tg pos">▲</i>'), 'zdanie „reguła krypto bez przewagi” przed listami');
+  /* karty */
+  const buy = c.slice(iB, iS), rest = c.slice(iR, iP), btc = card(buy, 'BTC');
+  assert.ok(btc.includes('<b class="na">▲ ●○○<i class="sr">trd.d.s{&quot;s&quot;:1}</i><small>trd.d.st.obs.up</small></b>') && btc.includes('img/krypto/btc.svg'), 'BTC: szara obserwacja ▲, 1 kropka, logo monety: ' + btc);
+  assert.ok(btc.includes('trd.d.r.p.up{"w":"trd.d.pw1","p":"+2.10%"}') && !btc.includes('trd.d.r.f.') && btc.includes('trd.dc.nx{"d":"') && !btc.includes('trd.d.nx{'), 'BTC: ruch ceny, bez zdania o przepływie, data doby UTC: ' + btc);
+  assert.ok(btc.includes('trd.d.ev{"rule":"trd.d.r.p","fam":"trd.d.fam.cr","p":"48.2","k":440,"n":912,"days":252,"lo":"42.1","hi":"54.4"}') && btc.includes('<i class="tg">trd.d.v.none</i>') && btc.includes('trd.d.own{"k":51,"n":105}'), 'BTC: skuteczność linii cr·p, odznaka „brak przewagi”, własne k/n: ' + btc);
+  assert.ok(rest.includes('<summary>trd.d.none.t{"n":3}</summary>'), 'Bez sygnału dziś (3)');
+  const pos = ['ETH', 'SOL', 'DOGE'].map(s => rest.indexOf(card(rest, s))); assert.ok(pos.every(p => p >= 0) && pos[0] < pos[1] && pos[1] < pos[2], 'kolejność quiet, stale, short: ' + pos);
+  const sol = card(rest, 'SOL'); assert.ok(sol.includes('<b class="na">•<small>trd.d.st.stale</small></b>') && sol.includes('<br>trd.dc.why.stale{"d":"') && !sol.includes('trd.d.why.stale') && !buy.includes('<span>SOL</span>'), 'SOL: nieaktualna (minęła doba UTC), tylko w „Bez sygnału”: ' + sol);
+  assert.ok(card(rest, 'ETH').includes('trd.d.r.p.q (+0.13%)') && card(rest, 'ETH').includes('<br>trd.d.why.quiet'), 'ETH: spokojny');
+  assert.ok(card(rest, 'DOGE').includes('trd.d.r.p.nz{"p":"+3.30%"}') && card(rest, 'DOGE').includes('<br>trd.d.why.short'), 'DOGE: liczba jest, porównania brak — nie „brak danych”');
+  /* linia i metoda */
+  const pool = c.slice(iP, iM); assert.equal((pool.match(/<div class="etfk trk">/g) || []).length, 1, 'jedna linia krypto');
+  assert.ok(pool.includes('<summary>trd.dc.b.t</summary><p class="pnote">trd.dc.b.sub</p>') && pool.includes('<p class="pnote">trd.dc.b.note</p>') && pool.includes('<span>trd.d.b.name{&quot;fam&quot;:&quot;trd.d.fam.cr&quot;,&quot;rule&quot;:&quot;trd.d.r.p&quot;}</span><b>48.2%</b>'), 'linia cr·p z tekstami krypto');
+  assert.ok(pool.includes('trd.b.kn{"k":440,"n":912} · trd.d.b.days{"d":252}') && pool.includes('trd.b.ci{"lo":"42.1","hi":"54.4"}<br>trd.d.b.halves{"a":"48.5","b":"48.0"} · trd.d.b.oos{"k":0,"n":0}<br><i class="tg">trd.d.v.none</i>'), 'liczby linii: 440 z 912, 252 dni, zakres, połowy, od wdrożenia, brak przewagi');
+  const meth = c.slice(iM); assert.ok(meth.includes('<summary>trd.dc.m.t{"v":1}</summary>'), 'wersja reguły krypto z linii (v)');
+  const P = [...meth.matchAll(/<p class="pnote">(trd\.[a-z.0-9]+)<\/p>/g)].map(m => m[1]);
+  assert.deepEqual(P, ['trd.dc.m.1', 'trd.dc.m.2', 'trd.dc.m.3', 'trd.dc.m.4', 'trd.d.m.5', 'trd.dc.m.5', 'trd.dc.m.6', 'trd.d.m.7'], 'metoda: trd.dc.m.1–6 + trd.d.m.5 + trd.d.m.7');
+  /* ze słownikiem pl */
+  const DP = trdV123.dict('pl'), tp = (k, o) => (DP[k] || k).replace(/\{(\w+)\}/g, (_, n) => o && o[n] !== undefined ? o[n] : '');
+  const f2 = make({mode: 'trendy', trdv: 'crypto'}, false, tp); f2.trdApply(both()); const p = sec(f2.el.innerHTML);
+  assert.ok(p.includes('<h2>Następna doba (UTC): co mówią ceny krypto z ') && p.includes('<div class="k-val">0 z 1</div>') && p.includes('<span>krypto: ruch ceny dnia</span>') && p.includes('Jak liczymy sygnały dzienne krypto (wersja reguły 1)') && p.includes('zamknięcie ') && p.includes('(UTC) → następna doba ') && p.includes('Bez sygnału dziś (3)'), 'teksty pl: ' + p.slice(0, 300));
+  assert.ok(p.includes('po takich dniach (ruch ceny dnia, krypto): 48.2% w tę stronę (440 z 912, 252 dni)'), 'skuteczność linii po polsku');
+});
+
+test('v123: widok krypto bez wierszy krypto (stary plik, brak cen krypto, same złe wiersze) — dawna nota bez zmian; `d` z samymi wierszami krypto — świat bez bloku dziennego i bez „Tło”', () => {
+  const {make} = trdV96, {data} = trdV120, {rows, ln, cr, sec} = trdV123;
+  const note = (c) => c.includes('<section class="panel pcard trd-d"><h2>trd.d.t{"d":"') && c.includes('<p class="pnote">trd.d.nocr{"v":"trd.v.global"}</p><p class="pnote"><b>trd.d.disc</b></p></section><h2 class="trd-wk mtxt">trd.d.wk</h2>');
+  const f = make({mode: 'trendy', trdv: 'crypto'}); f.trdApply(data()); assert.ok(note(f.el.innerHTML) && !f.el.innerHTML.includes('trd-dailyc'), 'stary plik: nota jak dotąd');
+  const f1 = make({mode: 'trendy', trdv: 'crypto'}); f1.trdApply(data({bd: trdV120.bd.concat([ln])})); assert.ok(note(f1.el.innerHTML) && !f1.el.innerHTML.includes('trd-dailyc'), 'linia krypto bez wierszy: nota');
+  const f2 = make({mode: 'trendy', trdv: 'crypto'}); f2.trdApply(data({d: trdV120.d.concat([cr({id: 'BTC', st: 'weird'}), cr({id: 'ETH', str: 7}), cr({id: 'b c'})])})); assert.ok(note(f2.el.innerHTML), 'same złe wiersze krypto: nota');
+  /* tylko wiersze krypto (świat niepoliczony) */
+  const f3 = make({mode: 'trendy'}); f3.trdApply(data({d: rows, bd: [ln]})); const g3 = f3.el.innerHTML;
+  assert.ok(!g3.includes('trd-daily') && !g3.includes('trd-wk') && !g3.includes('trd.d.') && g3.includes('trd.k.in') && g3.includes('id="trd-method"'), 'global: bez bloku dziennego i bez nagłówka „Tło” (jak bez `d`)');
+  const f4 = make({mode: 'trendy', trdv: 'crypto'}); f4.trdApply(data({d: rows, bd: [ln]})); const g4 = f4.el.innerHTML;
+  assert.ok(sec(g4) && g4.includes('<h2 class="trd-wk mtxt">trd.d.wk</h2>') && g4.includes('trd.d.k.rules</span></div><div class="k-val">trd.dc.k.of{"e":0,"n":1}</div>'), 'krypto: sekcja krypto działa bez świata');
+  /* `d: []` — jak dotąd */
+  const f5 = make({mode: 'trendy'}); f5.trdApply(data({d: []})); const g5 = f5.el.innerHTML;
+  assert.ok(g5.includes('id="trd-daily"') && g5.includes('<h2>trd.d.t{"d":"—"}</h2>') && g5.includes('trd.d.k.empty'), 'pusta lista `d`: blok świata z zerami, jak dotąd');
+  const f6 = make({mode: 'trendy', trdv: 'crypto'}); f6.trdApply(data({d: []})); assert.ok(note(f6.el.innerHTML), 'pusta lista `d`, widok krypto: nota');
+  /* bez linii krypto: karty są, kafel reguł „—”, bez zdania o braku przewagi i bez bloku linii; wersja i data „—” */
+  const f7 = make({mode: 'trendy', trdv: 'crypto'}); f7.trdApply(data({d: rows})); const c7 = sec(f7.el.innerHTML);
+  assert.ok(c7.includes('<span>BTC</span>') && c7.includes('trd.d.k.rules</span></div><div class="k-val na">—</div>') && c7.includes('trd.d.k.oos0{"d":"—"}') && !c7.includes('trd.dc.none.all') && !c7.includes('id="trd-dbdc"') && c7.includes('<summary>trd.dc.m.t{"v":"—"}</summary>'), 'bez linii krypto: „—”, nie zero: ' + c7.slice(0, 200));
+  const b7 = trdV123.card(c7, 'BTC'); assert.ok(!b7.includes('trd.d.ev{') && b7.includes('<i class="tg">trd.d.v.none</i> · trd.d.own{"k":51,"n":105}'), 'karta bez linii: bez zdania o skuteczności, odznaka z wiersza: ' + b7);
+});
+
+test('v123: linie krypto — tylko cr·p (cr·f, cr·fp, zły werdykt i duplikat pominięte, pierwszy wygrywa); wiersze krypto z regułą f/fp/x przyjmowane (faza 2); przewaga linii → kolor i „1 z 1”', () => {
+  const {make} = trdV96, {data, line} = trdV120, {rows, ln, cr, sec, card} = trdV123;
+  const L = [line({fam: 'cr', rule: 'f', k: 90, n: 100, days: 150, vd: 'edge'}), line({fam: 'cr', rule: 'fp', k: 90, n: 100, days: 150, vd: 'edge'}), Object.assign({}, ln, {vd: 'maybe'}), ln, Object.assign({}, ln, {k: 700, vd: 'edge'})];
+  const f = make({mode: 'trendy', trdv: 'crypto'}); f.trdApply(data({d: rows.concat([cr({id: 'XRP', f: 12, cur: 'USD', fu: 12, zf: 1.4, r: -1.8, zp: -1.2, rule: 'x', st: 'x'})]), bd: trdV120.bd.concat(L)})); const c = sec(f.el.innerHTML);
+  const pool = c.slice(c.indexOf('id="trd-dbdc"'), c.indexOf('id="trd-dmethodc"'));
+  assert.equal((pool.match(/<div class="etfk trk">/g) || []).length, 1, 'jedna linia'); assert.ok(pool.includes('<b>48.2%</b>') && !pool.includes('trd.d.r.f&quot;') && !pool.includes('trd.d.v.edge'), 'pierwsza poprawna cr·p');
+  assert.ok(c.includes('<div class="k-val">trd.dc.k.of{"e":0,"n":1}</div>') && c.includes('trd.dc.none.all'), '„0 z 1”, zdanie o braku przewagi');
+  assert.ok(card(c, 'XRP').includes('<small>trd.d.st.x</small>') && card(c, 'XRP').includes('<br>trd.d.why.x') && c.includes('trd.d.k.nline{"q":1,"x":1,"s":1,"o":1}'), 'XRP (reguła x, faza 2): przyjęty, w „Bez sygnału”');
+  /* linia z przewagą i wiersz „buy” — zielony kolor tylko wtedy */
+  const e = Object.assign({}, ln, {k: 560, n: 912, ci: [58, 64.3], h1: 60, h2: 62, vd: 'edge'});
+  const f2 = make({mode: 'trendy', trdv: 'crypto'}); f2.trdApply(data({d: [Object.assign({}, rows[0], {st: 'buy', vd: 'edge'})].concat(rows.slice(1)), bd: [e]})); const c2 = sec(f2.el.innerHTML);
+  assert.ok(card(c2, 'BTC').includes('<b class="pos">▲ ●○○') && card(c2, 'BTC').includes('<i class="tg pos">trd.d.v.edge</i>') && c2.includes('<div class="k-val">trd.dc.k.of{"e":1,"n":1}</div>') && c2.includes('<div class="k-val pos">1</div>') && !c2.includes('trd.dc.none.all'), 'przewaga: zielona karta, „1 z 1”, bez zdania o braku przewagi');
+});
+
+test('v123: otwarte bloki — widok krypto zapamiętuje trd-drestc / trd-dbdc / trd-dmethodc, świat swoje; przełączanie widoków przywraca każdy zestaw', () => {
+  const {make} = trdV96, {both} = trdV123, opened = [];
+  const el = {innerHTML: '', q: [], querySelectorAll(sel) { assert.equal(sel, 'details[open]'); return this.q; },
+    querySelector(sel) { const d = {id: sel.slice(1)}; Object.defineProperty(d, 'open', {set(v) { if (v) opened.push(d.id); }}); return this.innerHTML.includes('id="' + d.id + '"') ? d : null; }};
+  const st = {mode: 'trendy'}, f = make(st, false, undefined, el); f.trdApply(both());
+  const W = [{id: 'trd-drest'}, {id: 'trd-dmethod'}], C = [{id: 'trd-drestc'}, {id: 'trd-dbdc'}, {id: 'trd-dmethodc'}];
+  el.q = W; f.renderTrendy(); assert.deepEqual(opened.splice(0), ['trd-drest', 'trd-dmethod'], 'global: odświeżenie zachowuje otwarte');
+  st.trdv = 'crypto'; f.renderTrendy(); assert.deepEqual(opened.splice(0), [], 'krypto: własne bloki (na start zamknięte)');
+  assert.ok(el.innerHTML.includes('id="trd-drestc"') && el.innerHTML.includes('id="trd-dbdc"') && el.innerHTML.includes('id="trd-dmethodc"') && !el.innerHTML.includes('id="trd-drest"') && !el.innerHTML.includes('id="trd-dmethod"'), 'krypto: własne id bloków');
+  el.q = C; f.renderTrendy(); assert.deepEqual(opened.splice(0), ['trd-drestc', 'trd-dbdc', 'trd-dmethodc'], 'krypto: odświeżenie zachowuje otwarte');
+  st.trdv = 'global'; f.renderTrendy(); assert.deepEqual(opened.splice(0), ['trd-drest', 'trd-dmethod'], 'powrót do global — bloki świata otwarte');
+  el.q = W; st.trdv = 'crypto'; f.renderTrendy(); assert.deepEqual(opened.splice(0), ['trd-drestc', 'trd-dbdc', 'trd-dmethodc'], 'powrót do krypto — bloki krypto otwarte');
+});
+
+test('v123: kod strony — TRD_DRULESC = [cr·p], trdDRow przyjmuje fam „cr”, trdDailyC przed trdDaily i renderTrendy, hak renderTrendy bez zmian, świat odfiltrowuje wiersze krypto', () => {
+  const b0 = html.indexOf('/* v89: TRENDY — początek'), b1 = html.indexOf('/* v89: TRENDY — koniec */'), blk = html.slice(b0, b1);
+  assert.ok(blk.includes("const TRD_DRULESC=[['cr','p']];") && blk.indexOf("const TRD_DRULESC=") < blk.indexOf("const TRD_DFAM=['eq','bd','pm'],"), 'stała linii krypto');
+  assert.ok(blk.includes("if(!(TRD_DFAM.includes(r.fam)||r.fam==='cr')||!TRD_DRL.includes(r.rule)"), 'trdDRow: rodzina krypto');
+  const iC = blk.indexOf('function trdDailyC(D){'), iD = blk.indexOf('function trdDaily(D,cr){'), iR = blk.indexOf('function renderTrendy(){');
+  assert.ok(iC > 0 && iC < iD && iD < iR, 'trdDailyC przed trdDaily i renderTrendy');
+  assert.ok(blk.includes("if(!cr&&D.d.length&&D.d.every(r=>r&&r.fam==='cr'))return '';") && blk.includes("const R=D.d.map(trdDRow).filter(r=>r&&r.fam!=='cr');") && blk.includes('if(cr)return trdDailyC(D)||`<section class="panel pcard trd-d"><h2>'), 'trdDaily: świat bez krypto, krypto — sekcja albo nota');
+  assert.ok(html.includes("const dly=trdDaily(D,cr);w.innerHTML=head+dly+(dly?`<h2 class=\"trd-wk mtxt\">${t('trd.d.wk')}</h2>`:'')+disc+(!cr?"), 'hak renderTrendy bez zmian');
+  assert.equal(blk.split('function trdDailyC(').length, 2, 'jedna funkcja trdDailyC');
+});
+
+test('v123.1: TRENDY krypto — tytuł i podtytuł o następnej dobie w 10 językach (EXTRA117)', () => {
+  const apl = [...html.matchAll(/for\(const l in (EXTRA\d+)\)if\(I18N\[l\]\)Object\.assign\(I18N\[l\],\1\[l\]\);\n/g)].map(m => m[1]);
+  assert.ok(apl.indexOf('EXTRA117') > apl.indexOf('EXTRA80') && apl.indexOf('EXTRA80') >= 0, 'EXTRA117 po EXTRA80');
+  const en = v96src.tFor('en')('trd.h1c');
+  for (const L of ['pl', 'en', 'de', 'es', 'fr', 'it', 'pt', 'ru', 'zh', 'ja']) {
+    const t = v96src.tFor(L);
+    assert.ok(t('trd.subc') !== 'trd.subc' && t('trd.subc').includes('10') && t('trd.h1c').length > 4, L);
+    if (L !== 'en') assert.notEqual(t('trd.h1c'), en, L + ' ma własny tytuł (nie angielski zapas)');
+    assert.ok(!/kupuj(?![a-ząćęłńóśźż])|sprzedawaj(?![a-ząćęłńóśźż])|buy now|guarantee|forecast/i.test(t('trd.h1c') + t('trd.subc')), L);
+  }
+  assert.equal(v96src.tFor('pl')('trd.h1c'), 'Krypto: następna doba i ostatni tydzień');
 });
