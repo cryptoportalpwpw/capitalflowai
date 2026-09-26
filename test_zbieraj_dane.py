@@ -145,7 +145,7 @@ class MainFlow(unittest.TestCase):
         self.p_inst.start()
         self.p_kr = mock.patch.object(zd, 'build_krypto', side_effect=RuntimeError('offline')); self.p_kr.start()
         self.p_tic = mock.patch.object(zd, 'build_tic', side_effect=RuntimeError('offline')); self.p_tic.start()
-        self.p_v50 = [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True) for f in ('build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy', 'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto')]
+        self.p_v50 = [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True) for f in ('build_aukcje', 'build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy', 'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_stres', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto', 'build_insider')]
         [p.start() for p in self.p_v50]   # v50: nowe źródła w testach przepływu głównego bez sieci
 
     def tearDown(self):
@@ -181,7 +181,7 @@ class MainFlow(unittest.TestCase):
         with mock.patch.dict(os.environ, env, clear=False):
             zd.main()
         self.assertIn('meta', self.saved)
-        self.assertEqual([e for e in self.saved['meta']['errors'] if not e.startswith(('instytucje', 'poprzedni', 'krypto', 'TIC', 'BIS', 'CFTC', 'Coin Metrics', 'MFW', 'EBC kursy', 'obce', 'NSDL', 'TWSE', 'SAFE', 'Eurostat', 'Statistics Canada', 'FSS', 'MF SPW', 'Banxico', 'fundusze', 'BLS', 'OECD', 'Indeksy', 'Rynki', 'Wieloryby', 'Dźwignia', 'Ceny krypto'))],
+        self.assertEqual([e for e in self.saved['meta']['errors'] if not e.startswith(('instytucje', 'Stres', 'poprzedni', 'krypto', 'TIC', 'BIS', 'CFTC', 'Coin Metrics', 'MFW', 'EBC kursy', 'obce', 'NSDL', 'TWSE', 'SAFE', 'Eurostat', 'Statistics Canada', 'FSS', 'MF SPW', 'Banxico', 'fundusze', 'BLS', 'OECD', 'Indeksy', 'Rynki', 'Wieloryby', 'Dźwignia', 'Aukcje', 'Insiderzy', 'Ceny krypto'))],
                          ['brak SOSOVALUE_KEY', 'brak FINNHUB_KEY', 'brak TWELVEDATA_KEY', 'brak COINMARKETCAP_KEY', 'brak FRED_KEY', 'brak EIA_KEY', 'brak BEA_KEY'])
 
 
@@ -346,7 +346,7 @@ class MainFlowPrices(unittest.TestCase):
         self.p_inst.start()
         self.p_kr = mock.patch.object(zd, 'build_krypto', side_effect=RuntimeError('offline')); self.p_kr.start()
         self.p_tic = mock.patch.object(zd, 'build_tic', side_effect=RuntimeError('offline')); self.p_tic.start()
-        self.p_v50 = [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True) for f in ('build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy', 'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto')]
+        self.p_v50 = [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True) for f in ('build_aukcje', 'build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy', 'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_stres', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto', 'build_insider')]
         [p.start() for p in self.p_v50]   # v50: nowe źródła w testach przepływu głównego bez sieci
 
     def tearDown(self):
@@ -533,7 +533,7 @@ class MainFlowInstytucje(unittest.TestCase):
         self.p_save = mock.patch.object(zd, 'save', lambda name, obj: self.saved.__setitem__(name, obj)); self.p_save.start()
         self.p_kr = mock.patch.object(zd, 'build_krypto', side_effect=RuntimeError('offline')); self.p_kr.start()
         self.p_tic = mock.patch.object(zd, 'build_tic', side_effect=RuntimeError('offline')); self.p_tic.start()
-        self.p_v50 = [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True) for f in ('build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy', 'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto')]
+        self.p_v50 = [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True) for f in ('build_aukcje', 'build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy', 'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_stres', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto', 'build_insider')]
         [p.start() for p in self.p_v50]   # v50: nowe źródła w testach przepływu głównego bez sieci
 
     def tearDown(self):
@@ -623,7 +623,7 @@ class MainFlowFred(unittest.TestCase):
         self.p_inst = mock.patch.object(zd, 'build_instytucje', side_effect=RuntimeError('offline')); self.p_inst.start()
         self.p_kr = mock.patch.object(zd, 'build_krypto', side_effect=RuntimeError('offline')); self.p_kr.start()
         self.p_tic = mock.patch.object(zd, 'build_tic', side_effect=RuntimeError('offline')); self.p_tic.start()
-        self.p_v50 = [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True) for f in ('build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy', 'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto')]
+        self.p_v50 = [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True) for f in ('build_aukcje', 'build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy', 'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_stres', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto', 'build_insider')]
         [p.start() for p in self.p_v50]   # v50: nowe źródła w testach przepływu głównego bez sieci
 
     def tearDown(self):
@@ -756,7 +756,7 @@ class MainFlowKrypto(unittest.TestCase):
         self.p_inst = mock.patch.object(zd, 'build_instytucje', side_effect=RuntimeError('offline')); self.p_inst.start()
         self.p_kr = mock.patch.object(zd, 'build_krypto', side_effect=RuntimeError('offline')); self.p_kr.start()
         self.p_tic = mock.patch.object(zd, 'build_tic', side_effect=RuntimeError('offline')); self.p_tic.start()
-        self.p_v50 = [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True) for f in ('build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy', 'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto')]
+        self.p_v50 = [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True) for f in ('build_aukcje', 'build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy', 'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_stres', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto', 'build_insider')]
         [p.start() for p in self.p_v50]   # v50: nowe źródła w testach przepływu głównego bez sieci
 
     def tearDown(self):
@@ -1115,7 +1115,7 @@ class MainFlowBis(unittest.TestCase):
         zd.META['errors'].clear(); zd.META['ok'].clear(); self.saved = {}
         self.p_save = mock.patch.object(zd, 'save', lambda name, obj: self.saved.__setitem__(name, obj)); self.p_save.start()
         self.p_off = [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True)
-                      for f in ('build_instytucje', 'build_krypto', 'build_tic', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy', 'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto')]
+                      for f in ('build_aukcje', 'build_instytucje', 'build_krypto', 'build_tic', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy', 'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_stres', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto', 'build_insider')]
         [p.start() for p in self.p_off]
 
     def tearDown(self):
@@ -1359,7 +1359,7 @@ class MainFlowCftc(unittest.TestCase):
         zd.META['errors'].clear(); zd.META['ok'].clear(); self.saved = {}
         self.ps = [mock.patch.object(zd, 'save', lambda name, obj: self.saved.__setitem__(name, obj))]
         self.ps += [mock.patch.object(zd, f, side_effect=RuntimeError('offline')) for f in ('build_instytucje', 'build_krypto', 'build_tic')]
-        self.ps += [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True) for f in ('build_bis', 'build_cm', 'build_rezerwy', 'build_stopy', 'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto')]
+        self.ps += [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True) for f in ('build_aukcje', 'build_bis', 'build_cm', 'build_rezerwy', 'build_stopy', 'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_stres', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto', 'build_insider')]
         [p.start() for p in self.ps]
 
     def tearDown(self):
@@ -1595,7 +1595,7 @@ class MainFlowCm(unittest.TestCase):
         self.patches = [mock.patch.object(zd, 'save', lambda name, obj: self.saved.__setitem__(name, obj))]
         for fn in ('build_instytucje', 'build_krypto', 'build_tic'):
             self.patches.append(mock.patch.object(zd, fn, side_effect=RuntimeError('offline')))
-        for fn in ('build_bis', 'build_cftc', 'build_rezerwy', 'build_stopy', 'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto'):   # pozostałe źródła v50 (mogą jeszcze nie istnieć); v95.3: bez pobierania funduszy i surowców w teście
+        for fn in ('build_aukcje', 'build_bis', 'build_cftc', 'build_rezerwy', 'build_stopy', 'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_stres', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto', 'build_insider'):   # pozostałe źródła v50 (mogą jeszcze nie istnieć); v95.3: bez pobierania funduszy i surowców w teście
             self.patches.append(mock.patch.object(zd, fn, side_effect=RuntimeError('offline'), create=True))
         for p in self.patches:
             p.start()
@@ -1791,7 +1791,7 @@ class MainFlowRezerwyV50(unittest.TestCase):
         zd.META['errors'].clear(); zd.META['ok'].clear(); self.saved = {}
         self.ps = [mock.patch.object(zd, 'save', lambda name, obj: self.saved.__setitem__(name, obj))]
         self.ps += [mock.patch.object(zd, f, side_effect=RuntimeError('offline')) for f in ('build_instytucje', 'build_krypto', 'build_tic')]
-        self.ps += [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True) for f in ('build_bis', 'build_cftc', 'build_cm', 'build_stopy', 'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto')]
+        self.ps += [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True) for f in ('build_aukcje', 'build_bis', 'build_cftc', 'build_cm', 'build_stopy', 'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_stres', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto', 'build_insider')]
         [p.start() for p in self.ps]
 
     def tearDown(self):
@@ -2303,8 +2303,8 @@ class BilansV70(unittest.TestCase):
         saved = {}
         prev = {'at': _iso(26 * 60), 'asof_max': '2026-Q1', 'rows': {}, 'order': []}
         offs = [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True)
-                for f in ('build_instytucje', 'build_krypto', 'build_tic', 'build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy',
-                          'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto')]
+                for f in ('build_aukcje', 'build_instytucje', 'build_krypto', 'build_tic', 'build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy',
+                          'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_stres', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto', 'build_insider')]
         [p.start() for p in offs]
         try:
             with mock.patch.dict(os.environ, {'SOSOVALUE_KEY': '', 'COINGECKO_KEY': ''}, clear=False), \
@@ -2602,8 +2602,8 @@ class ReviewV77(unittest.TestCase):
         zd.META['errors'].clear(); zd.META['ok'].clear(); saved = {}
         prev = dict(out, at=_iso(30))   # v80: część z błędem ponawiana po 60 min
         offs = [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True)
-                for f in ('build_instytucje', 'build_krypto', 'build_tic', 'build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy',
-                          'build_kursy', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto')]
+                for f in ('build_aukcje', 'build_instytucje', 'build_krypto', 'build_tic', 'build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy',
+                          'build_kursy', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_stres', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto', 'build_insider')]
         [p.start() for p in offs]
         try:
             with mock.patch.dict(os.environ, {'SOSOVALUE_KEY': '', 'COINGECKO_KEY': ''}, clear=False), \
@@ -2729,8 +2729,8 @@ class ReviewV80(unittest.TestCase):
         new = {'at': zd.NOW, 'in': {}, 'tw': {}, 'hk': {}, 'br': {}, 'tr': {}}
         saved = {}
         offs = [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True)
-                for f in ('build_instytucje', 'build_krypto', 'build_tic', 'build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy',
-                          'build_kursy', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto')]
+                for f in ('build_aukcje', 'build_instytucje', 'build_krypto', 'build_tic', 'build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy',
+                          'build_kursy', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_stres', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto', 'build_insider')]
         [p.start() for p in offs]
         try:
             with mock.patch.dict(os.environ, {'SOSOVALUE_KEY': '', 'COINGECKO_KEY': ''}, clear=False), \
@@ -2764,8 +2764,8 @@ class UeFormatV80(unittest.TestCase):
             prev = {'at': _iso(30), 'unit': unit, 'rows': {}, 'order': []}
             new = {'at': zd.NOW, 'unit': 'S121', 'rows': {}, 'order': []}
             offs = [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True)
-                    for f in ('build_instytucje', 'build_krypto', 'build_tic', 'build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy',
-                              'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto')]
+                    for f in ('build_aukcje', 'build_instytucje', 'build_krypto', 'build_tic', 'build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy',
+                              'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_stres', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto', 'build_insider')]
             [p.start() for p in offs]
             try:
                 with mock.patch.dict(os.environ, {'SOSOVALUE_KEY': '', 'COINGECKO_KEY': ''}, clear=False), \
@@ -3140,8 +3140,8 @@ class MeksykFormatV882(unittest.TestCase):
             prev = {'at': _iso(30), 'd': [row]}
             new = {'at': zd.NOW, 'd': [row + [None] * (6 - len(row))]}
             offs = [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True)
-                    for f in ('build_instytucje', 'build_krypto', 'build_tic', 'build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy',
-                              'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto')]
+                    for f in ('build_aukcje', 'build_instytucje', 'build_krypto', 'build_tic', 'build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy',
+                              'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_stres', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto', 'build_insider')]
             [p.start() for p in offs]
             try:
                 with mock.patch.dict(os.environ, {'SOSOVALUE_KEY': '', 'COINGECKO_KEY': ''}, clear=False), \
@@ -3326,8 +3326,8 @@ class TrendyV89(unittest.TestCase):
     def test_main_writes_trendy_from_this_run(self):
         zd.META['errors'].clear(); zd.META['ok'].clear(); saved = {}
         offs = [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True)
-                for f in ('build_instytucje', 'build_krypto', 'build_tic', 'build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy',
-                          'build_kursy', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto')]
+                for f in ('build_aukcje', 'build_instytucje', 'build_krypto', 'build_tic', 'build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy',
+                          'build_kursy', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_stres', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto', 'build_insider')]
         [p.start() for p in offs]
         def fake_save(name, obj):
             saved[name] = obj; zd.SAVED[name] = obj
@@ -4460,10 +4460,9 @@ class UsaV97(unittest.TestCase):
         prev = {'energia': {'at': '2026-09-25T00:00:00+00:00', 's': {}}, 'bilans-usa': {'at': zd.NOW, 'ita': {}}}
         calls = []
         env = {'EIA_KEY': 'k1', 'BLS_KEY': '', 'BEA_KEY': ''}
-        stubs = [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True) for f in
-                 ('build_instytucje', 'build_krypto', 'build_tic', 'build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy', 'build_kursy', 'build_obce',
+        stubs = [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True) for f in ('build_aukcje', 'build_instytucje', 'build_krypto', 'build_tic', 'build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy', 'build_kursy', 'build_obce',
                   'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk',
-                  'build_fundusze', 'build_surowce', 'build_trendy', 'build_fred', 'build_etf', 'build_day', 'build_prices', 'build_cmc', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto')]
+                  'build_fundusze', 'build_surowce', 'build_trendy', 'build_fred', 'build_etf', 'build_day', 'build_prices', 'build_cmc', 'build_oecd', 'build_rynki', 'build_indeksy', 'build_stres', 'build_wieloryby', 'build_dzwignia', 'build_ceny_krypto', 'build_insider')]
         for s in stubs:
             s.start()
         try:
@@ -4852,7 +4851,7 @@ class DzwigniaV104(unittest.TestCase):
 
     def test_main_schedule_hourly_and_fallback(self):
         saved = {}
-        stubs = [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True) for f in ('build_instytucje', 'build_krypto', 'build_tic', 'build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy', 'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_wieloryby', 'build_indeksy', 'build_ceny_krypto')]
+        stubs = [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True) for f in ('build_aukcje', 'build_instytucje', 'build_krypto', 'build_tic', 'build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy', 'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_stres', 'build_wieloryby', 'build_indeksy', 'build_ceny_krypto', 'build_insider')]
         env = {k: '' for k in ('SOSOVALUE_KEY', 'COINGECKO_KEY', 'FINNHUB_KEY', 'TWELVEDATA_KEY', 'COINMARKETCAP_KEY', 'FRED_KEY', 'EIA_KEY', 'BLS_KEY', 'BEA_KEY', 'SITE_URL', 'CACHE_DIR')}
         fresh_prev = {'at': _iso(10), 'ok': {'hl': True, 'bn': True, 'dr': True, 'okx': True, 'kr': True, 'cb': True, 'dy': True}, 'hl': {'rows': {}}}
         stale_prev = {'at': _iso(10), 'ok': {'hl': True, 'bn': False, 'dr': True, 'okx': True, 'kr': True, 'cb': True, 'dy': True}, 'hl': {'rows': {}}}
@@ -5705,7 +5704,7 @@ class DzwigniaV109(unittest.TestCase):
 
     def test_main_first_run_after_upgrade_fetches_only_new_parts(self):
         saved, calls = {}, []
-        stubs = [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True) for f in ('build_instytucje', 'build_krypto', 'build_tic', 'build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy', 'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_wieloryby', 'build_indeksy', 'build_ceny_krypto')]
+        stubs = [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True) for f in ('build_aukcje', 'build_instytucje', 'build_krypto', 'build_tic', 'build_bis', 'build_cftc', 'build_cm', 'build_rezerwy', 'build_stopy', 'build_kursy', 'build_obce', 'build_eer', 'build_cofer', 'build_bilans', 'build_safe', 'build_ue', 'build_kanada', 'build_korea', 'build_spw', 'build_meksyk', 'build_fundusze', 'build_surowce', 'build_energia', 'build_usa_makro', 'build_bilans_usa', 'build_oecd', 'build_rynki', 'build_stres', 'build_wieloryby', 'build_indeksy', 'build_ceny_krypto', 'build_insider')]
         env = {k: '' for k in ('SOSOVALUE_KEY', 'COINGECKO_KEY', 'FINNHUB_KEY', 'TWELVEDATA_KEY', 'COINMARKETCAP_KEY', 'FRED_KEY', 'EIA_KEY', 'BLS_KEY', 'BEA_KEY', 'SITE_URL', 'CACHE_DIR')}
         prev = {'at': _iso(10), 'full_at': _iso(10), 'ok': {'hl': True, 'bn': True, 'dr': True, 'okx': True}, 'hl': {'rows': {}}}   # plik sprzed v109: młody, bez nowych części
         built = {'at': zd.NOW, 'ok': {'hl': True, 'bn': True, 'dr': True, 'okx': True, 'kr': True, 'cb': False, 'dy': True}}
@@ -6857,3 +6856,888 @@ class CenyKryptoV121(unittest.TestCase):
         html = open(os.path.join(root, 'index.html'), encoding='utf-8').read()
         self.assertIn('<section class="panel pcard" id="c-ceny-krypto" hidden></section>', html); self.assertIn("srvJSON('ceny-krypto')", html)
         self.assertIn("const KC_SYMS=['BTC','ETH','XRP','BNB','SOL','DOGE','ADA','TRX','LINK','AVAX'];", html); self.assertEqual(list(zd.TR_CR_SYMS), ['BTC', 'ETH', 'XRP', 'BNB', 'SOL', 'DOGE', 'ADA', 'TRX', 'LINK', 'AVAX'])
+
+
+import io
+import re
+
+
+class InsiderV121(unittest.TestCase):
+    """v121: insiderzy spółek USA (Form 4 z EDGAR, bez klucza; kontakt User-Agent z sekretu SEC_CONTACT): dzień gotowy od 04:00 UTC dnia
+    następnego, indeks o stałej szerokości kolumn i każde zgłoszenie raz (numer, nie ścieżka), dokument zgłoszenia (P/S × cena; brak ceny =
+    pominięte), kolejka na kilka przebiegów, limit 700, 403 „brak pliku” (weekend) ≠ 403 blokada, ostatni dzień bez indeksu sprawdzany znowu,
+    błędy sieci (zgłoszenie nie znika po jednym błędzie, dzień nie utyka), brak ≠ zero, uzupełnianie wstecz, okablowanie main(), kontrola, straż i strona."""
+    UTC = datetime.timezone.utc
+    C = 'kontakt-testowy@example.org'   # atrapa — prawdziwy adres tylko w sekrecie SEC_CONTACT
+    SAT = datetime.datetime(2026, 9, 26, 4, 20, tzinfo=datetime.timezone.utc)   # sobota 04:20 UTC: piątek 25.09 gotowy
+    F1, F2, F3 = 'edgar/data/1555279/0001535264-26-000053.txt', 'edgar/data/1800/0001306119-26-000009.txt', 'edgar/data/935036/0002080452-26-000013.txt'
+    F1_OWNER = 'edgar/data/1535264/0001535264-26-000053.txt'   # to samo zgłoszenie pod CIK osoby zgłaszającej
+    # odpowiedź magazynu na brak pliku (dzień bez indeksu) i strona blokady (nagranie 26.09.2026, skrócone)
+    S3_DENIED = b'<?xml version="1.0" encoding="UTF-8"?>\n<Error><Code>AccessDenied</Code><Message>Access Denied</Message><RequestId>X</RequestId></Error>'
+    BLOCKED = (b'<!DOCTYPE html>\n<html><head><title>SEC.gov | Your Request Originates from an Undeclared Automated Tool</title></head><body>'
+               b'<h1>Your Request Originates from an Undeclared Automated Tool</h1><p>Please declare your traffic by updating your user agent to include company specific information.</p></body></html>')
+    IDX = ('Description:           Daily Index of EDGAR Dissemination Feed by Form Type\nLast Data Received:    Sep 25, 2026\nComments:              webmaster@sec.gov\n \n \n'
+           'Form Type   Company Name                                                  CIK\n      Date Filed  File Name\n' + '-' * 141 + '\n'
+           '1-A POS          Modern Mining Technology Corp.                                1898722     20260925    edgar/data/1898722/0001213900-26-103507.txt                                                \n'
+           '4                908 Devices Inc.                                              1555279     20260925    edgar/data/1555279/0001535264-26-000053.txt                                                \n'
+           '4                ABBOTT LABORATORIES                                           1800        20260925    edgar/data/1800/0001306119-26-000009.txt                                                \n'
+           '4                ACI WORLDWIDE, INC.                                           935036      20260925    edgar/data/935036/0002080452-26-000013.txt                                                \n'
+           '4                AWM Investment Company, Inc.                                  1535264     20260925    edgar/data/1535264/0001535264-26-000053.txt                                                \n'
+           '4                908 Devices Inc.                                              1555279     20260925    edgar/data/1555279/0001535264-26-000053.txt                                                \n'
+           '4/A              ACME CORP                                                     1           20260925    edgar/data/1/0000000001-26-000001.txt                                                \n'
+           '424B2            BANK                                                          2           20260925    edgar/data/2/0000000002-26-000001.txt                                                \n')
+    # nagranie 26.09.2026 (skrócone: bez adresu i podpisu): zgłoszenie 0001535264-26-000053 — dwie sprzedaże na rynku, spółka 908 Devices (MASS)
+    REC = ('<SEC-DOCUMENT>0001535264-26-000053.txt : 20260925\n<SEC-HEADER>0001535264-26-000053.hdr.sgml : 20260925\n<ACCEPTANCE-DATETIME>20260925161925\n'
+           'ACCESSION NUMBER:\t\t0001535264-26-000053\nCONFORMED SUBMISSION TYPE:\t4\n</SEC-HEADER>\n<DOCUMENT>\n<TYPE>4\n<SEQUENCE>1\n<FILENAME>primary_doc.xml\n<TEXT>\n<XML>\n'
+           '<?xml version="1.0"?>\n<ownershipDocument>\n    <schemaVersion>X0609</schemaVersion>\n    <documentType>4</documentType>\n    <periodOfReport>2026-09-23</periodOfReport>\n'
+           '    <issuer>\n        <issuerCik>0001555279</issuerCik>\n        <issuerName>908 Devices Inc.</issuerName>\n        <issuerTradingSymbol>MASS</issuerTradingSymbol>\n    </issuer>\n'
+           '    <reportingOwner>\n        <reportingOwnerId>\n            <rptOwnerCik>0001535264</rptOwnerCik>\n            <rptOwnerName>AWM Investment Company, Inc.</rptOwnerName>\n        </reportingOwnerId>\n'
+           '        <reportingOwnerRelationship>\n            <isDirector>0</isDirector>\n            <isOfficer>0</isOfficer>\n            <isTenPercentOwner>1</isTenPercentOwner>\n            <isOther>0</isOther>\n        </reportingOwnerRelationship>\n    </reportingOwner>\n'
+           '    <aff10b5One>0</aff10b5One>\n    <nonDerivativeTable>\n'
+           '        <nonDerivativeTransaction>\n            <securityTitle>\n                <value>Common Stock</value>\n            </securityTitle>\n            <transactionDate>\n                <value>2026-09-23</value>\n            </transactionDate>\n'
+           '            <transactionCoding>\n                <transactionFormType>4</transactionFormType>\n                <transactionCode>S</transactionCode>\n                <equitySwapInvolved>0</equitySwapInvolved>\n            </transactionCoding>\n'
+           '            <transactionTimeliness>\n                <value></value>\n            </transactionTimeliness>\n'
+           '            <transactionAmounts>\n                <transactionShares>\n                    <value>1000</value>\n                </transactionShares>\n                <transactionPricePerShare>\n                    <value>11.25</value>\n                    <footnoteId id="F1"/>\n                </transactionPricePerShare>\n'
+           '                <transactionAcquiredDisposedCode>\n                    <value>D</value>\n                </transactionAcquiredDisposedCode>\n            </transactionAmounts>\n'
+           '            <postTransactionAmounts>\n                <sharesOwnedFollowingTransaction>\n                    <value>4755773</value>\n                </sharesOwnedFollowingTransaction>\n            </postTransactionAmounts>\n'
+           '            <ownershipNature>\n                <directOrIndirectOwnership>\n                    <value>I</value>\n                </directOrIndirectOwnership>\n                <natureOfOwnership>\n                    <value>By Limited Partnershp</value>\n                </natureOfOwnership>\n            </ownershipNature>\n        </nonDerivativeTransaction>\n'
+           '        <nonDerivativeTransaction>\n            <securityTitle>\n                <value>Common Stock</value>\n            </securityTitle>\n            <transactionDate>\n                <value>2026-09-24</value>\n            </transactionDate>\n'
+           '            <transactionCoding>\n                <transactionFormType>4</transactionFormType>\n                <transactionCode>S</transactionCode>\n                <equitySwapInvolved>0</equitySwapInvolved>\n            </transactionCoding>\n'
+           '            <transactionAmounts>\n                <transactionShares>\n                    <value>24000</value>\n                    <footnoteId id="F2"/>\n                    <footnoteId id="F3"/>\n                </transactionShares>\n'
+           '                <transactionPricePerShare>\n                    <value>11.3594</value>\n                    <footnoteId id="F1"/>\n                </transactionPricePerShare>\n                <transactionAcquiredDisposedCode>\n                    <value>D</value>\n                </transactionAcquiredDisposedCode>\n            </transactionAmounts>\n'
+           '            <postTransactionAmounts>\n                <sharesOwnedFollowingTransaction>\n                    <value>4754773</value>\n                </sharesOwnedFollowingTransaction>\n            </postTransactionAmounts>\n'
+           '            <ownershipNature>\n                <directOrIndirectOwnership>\n                    <value>I</value>\n                </directOrIndirectOwnership>\n            </ownershipNature>\n        </nonDerivativeTransaction>\n    </nonDerivativeTable>\n'
+           '    <footnotes>\n        <footnote id="F1">This is a weighted average price.</footnote>\n    </footnotes>\n</ownershipDocument>\n</XML>\n</TEXT>\n</DOCUMENT>\n</SEC-DOCUMENT>\n')
+    REC_SELL = 1000 * 11.25 + 24000 * 11.3594
+
+    def setUp(self):
+        zd.META['errors'].clear(); zd.META['notes'].clear(); zd.META['ok'].clear()
+        self.p_sleep = mock.patch.object(zd.time, 'sleep', lambda s: None); self.p_sleep.start()
+        zd._INS_LAST[0] = 0.0
+
+    def tearDown(self):
+        self.p_sleep.stop()
+
+    @staticmethod
+    def _doc(issuer, ticker, trs):
+        """Dokument .txt z jednym blokiem XML; trs = [(kod, A/D, akcje, cena), …] (cena None = wiersz bez ceny)."""
+        rows = ''.join(f'<nonDerivativeTransaction><securityTitle><value>Common Stock</value></securityTitle><transactionCoding><transactionFormType>4</transactionFormType><transactionCode>{c}</transactionCode></transactionCoding>'
+                       f'<transactionAmounts><transactionShares><value>{sh}</value></transactionShares>'
+                       + (f'<transactionPricePerShare><value>{px}</value></transactionPricePerShare>' if px is not None else '<transactionPricePerShare><footnoteId id="F1"/></transactionPricePerShare>')
+                       + f'<transactionAcquiredDisposedCode><value>{ad}</value></transactionAcquiredDisposedCode></transactionAmounts></nonDerivativeTransaction>' for c, ad, sh, px in trs)
+        return ('<SEC-DOCUMENT>x.txt : 20260925\n<SEC-HEADER>x\n</SEC-HEADER>\n<DOCUMENT>\n<TYPE>4\n<TEXT>\n<XML>\n<?xml version="1.0"?>\n<ownershipDocument><schemaVersion>X0609</schemaVersion><documentType>4</documentType>'
+                f'<issuer><issuerCik>1</issuerCik><issuerName>{issuer}</issuerName><issuerTradingSymbol>{ticker}</issuerTradingSymbol></issuer>'
+                f'<nonDerivativeTable>{rows}</nonDerivativeTable></ownershipDocument>\n</XML>\n</TEXT>\n</DOCUMENT>\n</SEC-DOCUMENT>\n')
+
+    def _docs(self):
+        return {self.F1: self.REC, self.F2: self._doc('ABBOTT LABORATORIES', 'ABT', [('P', 'A', 1000, 100.0), ('F', 'D', 5, 100.0)]),
+                self.F3: self._doc('ACI WORLDWIDE, INC.', 'ACIW', [('P', 'A', 10, 50.0), ('S', 'D', 20, 50.0)])}
+
+    @staticmethod
+    def _rd(path):
+        with open(path, encoding='utf-8') as f:
+            return f.read()
+
+    def _http(self, url, code, body=b''):
+        return zd.urllib.error.HTTPError(url, code, 'err', {}, io.BytesIO(body))
+
+    def _get(self, calls, docs, idx, fail=None):
+        """Udaje EDGAR: idx = {YYYYMMDD: tekst indeksu} (inne dni → 403 z treścią magazynu „AccessDenied”, jak w weekend), docs = {plik: tekst},
+        fail = {plik: wyjątek albo funkcja(url) → wyjątek}; sprawdza User-Agent (nazwa programu i kontakt z sekretu)."""
+        def get(url, headers=None, timeout=30):
+            calls.append(url); self.assertEqual((headers or {}).get('User-Agent'), zd.ins_ua(self.C), 'każde zapytanie z nazwą i kontaktem')
+            if 'daily-index' in url:
+                d = url.rsplit('form.', 1)[1][:8]
+                if d not in idx:
+                    raise self._http(url, 403, self.S3_DENIED)
+                return 200, idx[d]
+            f = url.split('/Archives/')[1]
+            if fail and f in fail:
+                x = fail[f]
+                raise x(url) if callable(x) and not isinstance(x, BaseException) else x
+            return 200, docs[f]
+        return get
+
+    def _run(self, prev, now, calls, docs=None, idx=None, fail=None, budget=None):
+        with mock.patch.object(zd, 'get', self._get(calls, docs or {}, idx or {}, fail)):
+            return zd.build_insider(prev, now=now, budget=budget, contact=self.C)
+
+    def test_target_day_and_urls(self):
+        D = datetime.datetime
+        self.assertEqual(zd.ins_target(self.SAT), datetime.date(2026, 9, 25), 'sobota 04:20 UTC: piątek gotowy')
+        self.assertEqual(zd.ins_target(D(2026, 9, 26, 3, 40, tzinfo=self.UTC)), datetime.date(2026, 9, 24), 'przed 04:00 UTC piątek jeszcze niegotowy (Form 4 przyjmowane do 22:00 ET)')
+        self.assertEqual(zd.ins_target(D(2026, 9, 25, 23, 20, tzinfo=self.UTC)), datetime.date(2026, 9, 24))
+        self.assertEqual(zd.ins_idx_url(datetime.date(2026, 9, 25)), 'https://www.sec.gov/Archives/edgar/daily-index/2026/QTR3/form.20260925.idx')
+        self.assertEqual(zd.ins_idx_url(datetime.date(2026, 1, 2)), 'https://www.sec.gov/Archives/edgar/daily-index/2026/QTR1/form.20260102.idx')
+        self.assertEqual(zd.ins_idx_url(datetime.date(2026, 12, 31)), 'https://www.sec.gov/Archives/edgar/daily-index/2026/QTR4/form.20261231.idx')
+        self.assertLessEqual(1 / zd.INS_TEMPO, 8.0); self.assertEqual(zd.INS_MAX, 700); self.assertEqual(zd.INS_BUDGET, 120)
+        # kontakt tylko z sekretu: w kodzie sam wzór, adres e-mail wymagany (bez niego urząd blokuje), zły = część wyłączona
+        self.assertNotIn('@', zd.INS_UA); self.assertEqual(zd.ins_ua(' ' + self.C + ' '), 'CapitalFlowAI/1.0 (' + self.C + ')')
+        for bad in (None, '', '   ', 'https://capitalflowai-app.github.io/', 'a b@c.org', 'x@y', 'x@y.org)', 'a@b.org\r\nX: y', 'a' * 120 + '@b.org'):
+            self.assertIsNone(zd.ins_ua(bad), repr(bad))
+        with self.assertRaises(RuntimeError):
+            zd.build_insider({}, now=self.SAT, contact='')
+
+    def test_parse_index(self):
+        rows = zd.ins_parse_index(self.IDX)
+        self.assertEqual(rows, [['1555279', '908 Devices Inc.', self.F1], ['1800', 'ABBOTT LABORATORIES', self.F2], ['935036', 'ACI WORLDWIDE, INC.', self.F3]],
+                         'tylko typ „4” (bez 4/A i 424B2); to samo zgłoszenie pod CIK spółki i osoby zgłaszającej — raz; stała szerokość kolumn')
+        self.assertEqual(zd.ins_parse_index('śmieć\n4 x\n'), [])
+        self.assertTrue(zd.ins_index_ok(self.IDX)); self.assertFalse(zd.ins_index_ok(self.BLOCKED.decode())); self.assertFalse(zd.ins_index_ok(''))
+        # jak w nagraniu 25.09.2026: zgłoszenie 0001104659-26-110960 (Redwire) pod 8 numerami CIK = jedno zgłoszenie
+        head = self.IDX.split('\n' + '-' * 141 + '\n')[0] + '\n' + '-' * 141 + '\n'
+        many = head + ''.join(f'4                FILER {i}                                                       {1732533 + i:<11d} 20260925    edgar/data/{1732533 + i}/0001104659-26-110960.txt\n' for i in range(8))
+        self.assertEqual(len(zd.ins_parse_index(many)), 1)
+
+    def test_parse_doc_recorded(self):
+        o = zd.ins_parse_doc(self.REC)
+        self.assertEqual((o['issuer'], o['ticker'], o['n_buy'], o['n_sell'], o['buy']), ('908 Devices Inc.', 'MASS', 0, 2, 0.0))
+        self.assertAlmostEqual(o['sell'], self.REC_SELL, places=2)
+
+    def test_parse_doc_rules(self):
+        o = zd.ins_parse_doc(self._doc('Acme Corp', 'acme', [('P', 'A', 100, 10.5), ('S', 'D', 50, 20), ('F', 'D', 10, 20), ('M', 'A', 10, 1), ('A', 'A', 10, 0), ('P', 'A', 5, None), ('S', 'D', '1,000', '2.5'), ('P', 'A', 'x', 3), ('P', 'D', 7, 3)]))
+        self.assertEqual((o['issuer'], o['ticker'], o['n_buy'], o['n_sell']), ('Acme Corp', 'ACME', 1, 2))
+        self.assertAlmostEqual(o['buy'], 1050.0); self.assertAlmostEqual(o['sell'], 1000.0 + 2500.0)   # F, M, A, bez ceny, cena 0, akcje „x”, P ze zbyciem — pominięte
+        self.assertIsNone(zd.ins_parse_doc(self._doc('X', 'NONE', []))['ticker'])
+        self.assertIsNone(zd.ins_parse_doc(self._doc('X', '', []))['ticker'])
+        with self.assertRaises(ValueError):
+            zd.ins_parse_doc('<SEC-DOCUMENT>\n<XML>\n<other/>\n</XML>\n')
+        with self.assertRaises(ValueError):
+            zd.ins_parse_doc('bez xml')
+        with self.assertRaises(ValueError):
+            zd.ins_parse_doc('<XML><ownershipDocument><issuer></XML>')
+
+    def test_full_day_after_previous(self):
+        prev = {'at': '2026-09-25T04:20:00+00:00', 'day': '2026-09-24', 'done': True, 'checked': '2026-09-24', 'hist': [['2026-09-24', 1.0, 2.0, 1, 1]], 'skipped': ['2026-09-20']}
+        calls = []
+        o = self._run(prev, self.SAT, calls, self._docs(), {'20260925': self.IDX})
+        self.assertEqual(calls, [zd.ins_idx_url(datetime.date(2026, 9, 25))] + ['https://www.sec.gov/Archives/' + f for f in (self.F1, self.F2, self.F3)],
+                         'indeks i trzy dokumenty — zgłoszenie wymienione pod dwoma CIK pobrane i policzone raz')
+        self.assertEqual((o['day'], o['done'], o['ok'], o['checked']), ('2026-09-25', True, {'sec': True}, '2026-09-25'))
+        self.assertEqual((o['n_filings'], o['n_queued'], o['n_parsed'], o['n_fail'], o['n_buy'], o['n_sell']), (3, 3, 3, 0, 2, 2))
+        self.assertAlmostEqual(o['buys_usd'], 100500.0, places=2); self.assertAlmostEqual(o['sells_usd'], self.REC_SELL + 1000.0, places=2)
+        self.assertEqual(o['ratio'], round(100500.0 / (self.REC_SELL + 1000.0), 3)); self.assertEqual(o['share'], round(100 * 100500.0 / (100500.0 + self.REC_SELL + 1000.0), 1))
+        self.assertEqual(o['top_buys'], [['ABBOTT LABORATORIES', 'ABT', 100000.0], ['ACI WORLDWIDE, INC.', 'ACIW', 500.0]])
+        self.assertEqual([r[:2] for r in o['top_sells']], [['908 Devices Inc.', 'MASS'], ['ACI WORLDWIDE, INC.', 'ACIW']]); self.assertAlmostEqual(o['top_sells'][0][2], self.REC_SELL, places=2)
+        self.assertEqual(o['hist'], [['2026-09-24', 1.0, 2.0, 1, 1], ['2026-09-25', o['buys_usd'], o['sells_usd'], 2, 2]])
+        for k in ('pending', 'iss', 'tries'):
+            self.assertNotIn(k, o)
+        self.assertEqual(o['skipped'], ['2026-09-20']); self.assertEqual(o['at'], zd.NOW); self.assertEqual(o['src'], zd.INS_SRC)
+        self.assertEqual((zd.META['errors'], zd.META['notes']), ([], []))
+        calls.clear()
+        o2 = self._run(o, self.SAT + datetime.timedelta(minutes=20), calls)
+        self.assertEqual(calls, [], 'ten sam dzień już odczytany — bez zapytań'); self.assertEqual(o2['hist'], o['hist']); self.assertEqual(o2['day'], '2026-09-25')
+
+    def test_first_run_backfills_and_skips_days_without_index(self):
+        calls = []
+        o = self._run(None, self.SAT, calls, self._docs(), {'20260925': self.IDX})
+        idx_calls = [u for u in calls if 'daily-index' in u]
+        self.assertEqual(len(idx_calls), zd.INS_BACK_DAYS, 'pierwszy przebieg: dni wstecz od najstarszego'); self.assertTrue(idx_calls[0].endswith('form.20260827.idx')); self.assertTrue(idx_calls[-1].endswith('form.20260925.idx'))
+        self.assertEqual(len(o['skipped']), zd.INS_BACK_DAYS - 1); self.assertNotIn('2026-09-25', o['skipped']); self.assertEqual(o['day'], '2026-09-25'); self.assertTrue(o['done'])
+        self.assertEqual((o['checked'], zd.META['errors']), ('2026-09-25', []), 'brak indeksu (403 „AccessDenied”) to nie błąd')
+        calls.clear()
+        self._run(o, self.SAT + datetime.timedelta(hours=3), calls)
+        self.assertEqual(calls, [], 'do następnego dnia bez zapytań')
+
+    def test_partial_day_continues_next_run(self):
+        prev = {'day': '2026-09-24', 'done': True, 'checked': '2026-09-24', 'hist': [['2026-09-24', 1.0, 2.0, 1, 1]]}
+        calls = []
+        o1 = self._run(prev, self.SAT, calls, self._docs(), {'20260925': self.IDX}, budget=-1)   # jedno zapytanie na przebieg: tylko indeks
+        self.assertEqual(len(calls), 1); self.assertFalse(o1['done']); self.assertEqual(o1['pending'], [self.F1, self.F2, self.F3]); self.assertEqual(o1['n_parsed'], 0)
+        self.assertIsNone(o1['buys_usd']); self.assertIsNone(o1['ratio']); self.assertEqual(o1['hist'][-1], ['2026-09-25', None, None, None, None], 'nic nie odczytane = brak, nie zero')
+        self.assertEqual((o1['n_buy'], o1['n_sell']), (None, None), 'bez odczytanych zgłoszeń liczba zgłoszeń z zakupem/sprzedażą to brak, nie 0')
+        self.assertTrue(any('w toku' in n for n in zd.META['notes'])); self.assertEqual(zd.META['errors'], [])
+        calls.clear()
+        o2 = self._run(o1, self.SAT + datetime.timedelta(minutes=20), calls, self._docs(), budget=-1)
+        self.assertEqual(calls, ['https://www.sec.gov/Archives/' + self.F1], 'ciąg dalszy bez ponownego indeksu'); self.assertEqual(o2['pending'], [self.F2, self.F3]); self.assertEqual(o2['n_parsed'], 1)
+        self.assertEqual(o2['buys_usd'], 0.0); self.assertAlmostEqual(o2['sells_usd'], self.REC_SELL, places=2); self.assertEqual(o2['hist'][-1][:3], ['2026-09-25', 0.0, round(self.REC_SELL, 2)])
+        self.assertEqual((o2['n_buy'], o2['n_sell']), (0, 1), 'po odczycie: prawdziwe zero zakupów')
+        self.assertEqual(o2['top_sells'][0][:2], ['908 Devices Inc.', 'MASS']); self.assertIn('iss', o2)
+        calls.clear()
+        o3 = self._run(o2, self.SAT + datetime.timedelta(minutes=40), calls, self._docs())
+        self.assertEqual(calls, ['https://www.sec.gov/Archives/' + f for f in (self.F2, self.F3)]); self.assertTrue(o3['done']); self.assertNotIn('pending', o3); self.assertNotIn('iss', o3)
+        self.assertEqual((o3['n_parsed'], o3['n_buy'], o3['n_sell']), (3, 2, 2)); self.assertAlmostEqual(o3['buys_usd'], 100500.0, places=2); self.assertEqual(len(o3['hist']), 2)
+
+    def test_weekend_without_index_is_not_an_error(self):
+        prev = {'day': '2026-09-25', 'done': True, 'checked': '2026-09-25', 'hist': [['2026-09-25', 5.0, 6.0, 1, 1]], 'buys_usd': 5.0, 'sells_usd': 6.0}
+        sun = datetime.datetime(2026, 9, 27, 4, 20, tzinfo=self.UTC)
+        calls = []
+        o = self._run(prev, sun, calls)
+        self.assertEqual(calls, [zd.ins_idx_url(datetime.date(2026, 9, 26))]); self.assertEqual(o['skipped'], [])
+        self.assertEqual(o['checked'], '2026-09-25', 'ostatni gotowy dzień bez indeksu nie jest jeszcze zamknięty — indeks może się spóźnić')
+        self.assertEqual((o['day'], o['hist'], o['buys_usd'], o['ok']), ('2026-09-25', prev['hist'], 5.0, {'sec': True})); self.assertEqual(zd.META['errors'], [])
+        calls.clear()
+        o = self._run(o, sun + datetime.timedelta(hours=5), calls)
+        self.assertEqual(calls, [zd.ins_idx_url(datetime.date(2026, 9, 26))], 'ten sam dzień sprawdzony znowu (jedno zapytanie na przebieg)')
+        mon = datetime.datetime(2026, 9, 28, 4, 20, tzinfo=self.UTC); calls.clear()
+        o2 = self._run(o, mon, calls)
+        self.assertEqual(calls, [zd.ins_idx_url(datetime.date(2026, 9, 26)), zd.ins_idx_url(datetime.date(2026, 9, 27))])
+        self.assertEqual((o2['skipped'], o2['checked']), (['2026-09-26'], '2026-09-26'), 'sobota już nie jest ostatnim dniem — zapamiętana jako pusta')
+        tue = datetime.datetime(2026, 9, 29, 4, 20, tzinfo=self.UTC); calls.clear()
+        o3 = self._run(o2, tue, calls, self._docs(), {'20260928': self.IDX})
+        self.assertEqual(calls[:2], [zd.ins_idx_url(datetime.date(2026, 9, 27)), zd.ins_idx_url(datetime.date(2026, 9, 28))]); self.assertEqual(o3['skipped'], ['2026-09-26', '2026-09-27'])
+        self.assertEqual(o3['day'], '2026-09-28'); self.assertEqual([r[0] for r in o3['hist']], ['2026-09-25', '2026-09-28']); self.assertEqual(zd.META['errors'], [])
+
+    def test_blocked_index_is_an_error_not_a_holiday(self):
+        """403 ze stroną blokady (zły User-Agent, limit) albo 429 — błąd; dzień handlu nie trafia do „skipped”, `checked` stoi, następny przebieg go czyta."""
+        prev = {'day': '2026-09-24', 'done': True, 'checked': '2026-09-24', 'hist': [['2026-09-24', 1.0, 2.0, 1, 1]]}
+        for code, body, why in ((403, self.BLOCKED, 'User-Agent'), (403, b'<html>Forbidden</html>', 'odmowa'), (429, b'', 'limit')):
+            zd.META['errors'].clear(); calls = []
+
+            def blocked(url, headers=None, timeout=30, e=(code, body)):
+                calls.append(url); raise self._http(url, *e)
+            with mock.patch.object(zd, 'get', blocked):
+                o = zd.build_insider(prev, now=self.SAT, contact=self.C)
+            self.assertEqual(len(calls), 1, 'po blokadzie żadnych dalszych zapytań w tym przebiegu')
+            self.assertEqual((o['checked'], o['skipped'], o['ok'], o['day'], o['hist']), ('2026-09-24', [], {'sec': False}, '2026-09-24', prev['hist']))
+            self.assertTrue(zd.META['errors'] and zd.META['errors'][0].startswith('Insiderzy: indeks 2026-09-25: HTTP %d' % code) and why in zd.META['errors'][0], zd.META['errors'])
+        calls = []
+        o2 = self._run(o, self.SAT + datetime.timedelta(minutes=20), calls, self._docs(), {'20260925': self.IDX})
+        self.assertEqual((o2['day'], o2['done'], o2['ok']), ('2026-09-25', True, {'sec': True}), 'dzień odczytany w następnym przebiegu')
+        # pierwszy przebieg przy blokadzie: nic nie trafia do „skipped” (także dni robocze), wyjątek → main zostawia poprzedni plik
+        zd.META['errors'].clear(); calls = []
+
+        def blocked_all(url, headers=None, timeout=30):
+            calls.append(url); raise self._http(url, 403, self.BLOCKED)
+        with mock.patch.object(zd, 'get', blocked_all), self.assertRaises(RuntimeError):
+            zd.build_insider(None, now=self.SAT, contact=self.C)
+        self.assertEqual(len(calls), 1, 'pierwszy przebieg: po blokadzie koniec, żaden dzień nie trafia do „skipped”')
+        # 200, ale bez nagłówka indeksu (strona błędu) — błąd, a nie „dzień bez zgłoszeń”
+        zd.META['errors'].clear(); calls = []
+        o3 = self._run(prev, self.SAT, calls, {}, {'20260925': self.BLOCKED.decode()})
+        self.assertEqual((o3['checked'], o3['day'], o3['ok']), ('2026-09-24', '2026-09-24', {'sec': False})); self.assertIn('bez nagłówka indeksu', zd.META['errors'][0])
+
+    def test_cap_700_filings(self):
+        head = self.IDX.split('\n' + '-' * 141 + '\n')[0] + '\n' + '-' * 141 + '\n'
+        idx = head + ''.join(f'4                SPÓŁKA {i:04d}                                                   {1000 + i:<11d} 20260925    edgar/data/{1000 + i}/{i:010d}-26-000001.txt\n' for i in range(702))
+        self.assertEqual(len(zd.ins_parse_index(idx)), 702)
+        prev = {'day': '2026-09-24', 'done': True, 'checked': '2026-09-24', 'hist': []}
+        o = self._run(prev, self.SAT, [], {}, {'20260925': idx}, budget=-1)
+        self.assertEqual((o['n_filings'], o['n_queued'], len(o['pending'])), (702, 700, 700)); self.assertTrue(any('policzono pierwsze 700' in n for n in o['notes']))
+        self.assertTrue(any('policzono pierwsze 700' in n for n in zd.META['notes'])); self.assertEqual(zd.META['errors'], [])
+
+    def test_network_errors_stop_run_and_keep_queue(self):
+        prev = {'day': '2026-09-24', 'done': True, 'checked': '2026-09-24', 'hist': []}
+        calls, t_out = [], zd.urllib.error.URLError('timed out')
+        o = self._run(prev, self.SAT, calls, self._docs(), {'20260925': self.IDX}, fail={self.F1: t_out, self.F2: t_out, self.F3: t_out})
+        self.assertEqual(len(calls), 1 + zd.INS_BLEDY, 'indeks i trzy błędy z rzędu — koniec na ten przebieg')
+        self.assertEqual((o['ok'], o['done'], sorted(o['pending']), o['n_parsed'], o['n_fail']), ({'sec': False}, False, sorted([self.F1, self.F2, self.F3]), 0, 0), 'nic nie przepada')
+        self.assertTrue(zd.META['errors'] and zd.META['errors'][0].startswith('Insiderzy: zgłoszenie 0002080452-26-000013.txt: ') and 'timed out' in zd.META['errors'][0], zd.META['errors'])
+        # jedno zgłoszenie z błędem serwera: reszta odczytana, ono czeka na następny przebieg (jedna próba na przebieg, bez błędu części)
+        zd.META['errors'].clear(); zd.META['notes'].clear(); calls.clear()
+        f503 = {self.F1: lambda url: self._http(url, 503)}
+        o2 = self._run(o, self.SAT + datetime.timedelta(minutes=20), calls, self._docs(), fail=f503)
+        self.assertEqual(len([u for u in calls if u.endswith(self.F1)]), 1)
+        self.assertEqual((o2['done'], o2['pending'], o2['n_parsed'], o2['n_fail'], o2['ok'], o2['tries']), (False, [self.F1], 2, 0, {'sec': True}, {'0001535264-26-000053.txt': 2}))
+        self.assertAlmostEqual(o2['buys_usd'], 100500.0, places=2); self.assertEqual(zd.META['errors'], [])
+        # INS_PROBY-ty przebieg z błędem: zgłoszenie pominięte (n_fail, notatka) — dzień domknięty, nie utyka
+        calls.clear()
+        o3 = self._run(o2, self.SAT + datetime.timedelta(minutes=40), calls, self._docs(), fail=f503)
+        self.assertEqual((o3['done'], o3['n_parsed'], o3['n_fail'], o3['ok']), (True, 2, 1, {'sec': True})); self.assertNotIn('tries', o3); self.assertNotIn('pending', o3)
+        self.assertTrue(any('pominięte po 3 przebiegach' in n and 'HTTP 503' in n for n in zd.META['notes'])); self.assertAlmostEqual(o3['hist'][-1][1], 100500.0, places=2)
+
+    def test_document_missing_or_blocked(self):
+        prev = {'day': '2026-09-24', 'done': True, 'checked': '2026-09-24', 'hist': []}
+        calls = []
+        # dokument, którego nie ma (403 „AccessDenied” albo 404) — pominięty i policzony w n_fail; reszta dnia odczytana, bez błędu
+        o = self._run(prev, self.SAT, calls, self._docs(), {'20260925': self.IDX}, fail={self.F1: lambda url: self._http(url, 403, self.S3_DENIED), self.F2: lambda url: self._http(url, 404)})
+        self.assertEqual((o['done'], o['n_parsed'], o['n_fail'], o['ok']), (True, 1, 2, {'sec': True})); self.assertEqual(zd.META['errors'], [])
+        # blokada przy dokumencie — koniec przebiegu od razu, zgłoszenie zostaje na początku kolejki, bez liczenia prób
+        calls.clear()
+        o2 = self._run(prev, self.SAT, calls, self._docs(), {'20260925': self.IDX}, fail={self.F2: lambda url: self._http(url, 403, self.BLOCKED)})
+        self.assertEqual(calls[-1], 'https://www.sec.gov/Archives/' + self.F2); self.assertEqual(len(calls), 3)
+        self.assertEqual((o2['done'], o2['pending'], o2['n_parsed'], o2['n_fail'], o2['ok'], o2['tries']), (False, [self.F2, self.F3], 1, 0, {'sec': False}, {}))
+        self.assertTrue(any('HTTP 403 (nieznany program' in e for e in zd.META['errors']), zd.META['errors'])
+
+    def test_index_error_keeps_previous_state_or_raises(self):
+        prev = {'day': '2026-09-24', 'done': True, 'checked': '2026-09-24', 'hist': [['2026-09-24', 1.0, 2.0, 1, 1]], 'buys_usd': 1.0}
+        def boom(url, headers=None, timeout=30):
+            raise zd.urllib.error.URLError('dns')
+        with mock.patch.object(zd, 'get', boom):
+            o = zd.build_insider(prev, now=self.SAT, contact=self.C)
+        self.assertEqual((o['day'], o['hist'], o['ok']), ('2026-09-24', prev['hist'], {'sec': False})); self.assertEqual(o['checked'], '2026-09-24', 'nieudany dzień — do sprawdzenia ponownie')
+        self.assertTrue(zd.META['errors'] and zd.META['errors'][0].startswith('Insiderzy: indeks 2026-09-25'))
+        zd.META['errors'].clear()
+        with mock.patch.object(zd, 'get', boom), self.assertRaises(RuntimeError):
+            zd.build_insider(None, now=self.SAT, contact=self.C)
+        def http500(url, headers=None, timeout=30):
+            raise zd.urllib.error.HTTPError(url, 500, 'err', {}, None)
+        zd.META['errors'].clear()
+        with mock.patch.object(zd, 'get', http500):
+            o3 = zd.build_insider(prev, now=self.SAT, contact=self.C)
+        self.assertEqual(o3['ok'], {'sec': False}); self.assertIn('HTTP 500', zd.META['errors'][0]); self.assertEqual(o3['skipped'], [])
+
+    def test_budget_late_run_and_hist_limit(self):
+        with mock.patch.object(zd, '_RUN_T0', [zd.time.monotonic() - zd.INS_LATE - 1]), mock.patch.object(zd, 'get', self._get([], {}, {})):
+            o = zd.build_insider({'day': '2026-09-25', 'done': True, 'checked': '2026-09-25'}, now=self.SAT, contact=self.C)
+        self.assertEqual(o['day'], '2026-09-25')
+        old = [[f'2026-{1 + i // 28:02d}-{1 + i % 28:02d}', float(i), 0.0, 1, 0] for i in range(zd.INS_HIST + 10)]
+        h = zd.ins_hist(old + ['x', ['zła', 1, 2, 3, 4]], ['2026-09-25', 9.0, 9.0, 1, 1])
+        self.assertEqual(len(h), zd.INS_HIST); self.assertEqual(h[-1], ['2026-09-25', 9.0, 9.0, 1, 1]); self.assertEqual(h, sorted(h))
+        self.assertEqual(zd.ins_top({'a': ['A', 'AA', 5.0, 0.0], 'b': ['B', None, 7.0, 3.0], 'c': ['C', 'CC', 0.0, 1.0], 'd': 'śmieć'}, 2), [['B', None, 7.0], ['A', 'AA', 5.0]])
+        self.assertEqual(zd.ins_top({'b': ['B', None, 7.0, 3.0], 'c': ['C', 'CC', 0.0, 1.0]}, 3), [['B', None, 3.0], ['C', 'CC', 1.0]])
+
+    def test_main_wiring(self):
+        saved, seen = {}, {}; prev = {'at': _iso(30), 'day': '2026-09-24'}
+        env0 = {'SOSOVALUE_KEY': '', 'COINGECKO_KEY': '', 'FINNHUB_KEY': '', 'TWELVEDATA_KEY': '', 'COINMARKETCAP_KEY': '', 'FRED_KEY': '', 'SITE_URL': '', 'CACHE_DIR': ''}
+        stubs = [mock.patch.object(zd, n, side_effect=RuntimeError('offline')) for n in dir(zd) if n.startswith('build_') and n != 'build_insider']
+        [s.start() for s in stubs]
+
+        def fake(p, now=None, budget=None, contact=None):
+            seen['contact'] = contact; seen['secret_masked'] = contact in zd.SECRETS
+            return {'at': 'x', 'ok': {'sec': True}, 'prev': p}
+
+        def run(env, build):
+            zd.META['errors'].clear(); zd.META['notes'].clear(); zd.META['ok'].clear(); saved.clear(); seen.clear()
+            with mock.patch.object(zd, 'save', lambda name, obj: saved.__setitem__(name, obj)), mock.patch.object(zd, 'previous', lambda name: prev if name == 'insider' else None), \
+                 mock.patch.dict(os.environ, dict(env0, **env), clear=False), mock.patch.object(zd, 'build_insider', build):
+                zd.main()
+        try:
+            run({'SEC_CONTACT': ' ' + self.C + ' '}, fake)
+            self.assertIs(saved['insider']['prev'], prev); self.assertIs(zd.META['ok']['insider'], True)
+            self.assertEqual(seen, {'contact': self.C, 'secret_masked': True}, 'kontakt z sekretu, maskowany w komunikatach')
+            run({'SEC_CONTACT': self.C}, mock.Mock(side_effect=RuntimeError('padło ' + self.C)))
+            self.assertIs(saved['insider'], prev, 'awaria = poprzedni plik'); self.assertIs(zd.META['ok']['insider'], False)
+            self.assertIn('Insiderzy: padło ***', zd.META['errors'], 'adres kontaktowy nigdy w komunikacie błędu')
+            for val, why in (('', 'brak SEC_CONTACT'), ('https://capitalflowai-app.github.io/', 'SEC_CONTACT to nie adres e-mail')):
+                b = mock.Mock(side_effect=AssertionError('nie wolno wołać bez kontaktu'))
+                run({'SEC_CONTACT': val}, b)
+                self.assertFalse(b.called); self.assertIs(saved.get('insider'), prev, 'bez kontaktu: poprzedni plik zostaje, bez zapytań')
+                self.assertNotIn('insider', zd.META['ok']); self.assertTrue(any(n.startswith(why) and 'insiderzy' in n for n in zd.META['notes']), zd.META['notes'])
+                self.assertFalse(any('Insiderzy' in e for e in zd.META['errors']))
+        finally:
+            [s.stop() for s in stubs]
+        src = self._rd(zd.__file__)
+        self.assertIn("prev_ins = previous('insider')", src); self.assertIn("save('insider', ins)", src); self.assertIn("os.environ.get('SEC_CONTACT', '')", src)
+        blk = src[src.index('# ===================== v121: INSIDERZY'):min(x for x in (src.find('\n# =====================', src.index('# ===================== v121: INSIDERZY') + 10), src.find('\n# --- v', src.index('# ===================== v121: INSIDERZY') + 10), src.index('\ndef main():')) if x > 0)]   # do następnego nagłówka bloku albo def main() (niezależnie od kolejności łatek)
+        self.assertIn('informacja publiczna SEC', blk); self.assertIn('accessing-edgar-data', blk); self.assertNotIn('domena publiczna', blk)
+        self.assertIsNone(re.search(r'[\w.+-]+@[\w-]+\.[a-z]{2,}', blk), 'żadnego adresu e-mail w kodzie zbieracza')
+
+    def test_kontrola_straz_workflow_and_page(self):
+        import importlib.util, tempfile
+        root = os.path.dirname(os.path.abspath(__file__)); tmp = tempfile.mkdtemp(prefix='kontrola-ins-')
+        with mock.patch.dict(os.environ, {'KONTROLA_DIR': os.path.join(tmp, 'kontrola'), 'KONTROLA_ARCH': os.path.join(tmp, 'archiwum')}, clear=False):
+            spec = importlib.util.spec_from_file_location('v121_kontrola', os.path.join(root, 'narzedzia', 'kontrola.py'))
+            k = importlib.util.module_from_spec(spec); spec.loader.exec_module(k)
+            spec = importlib.util.spec_from_file_location('v121_straz', os.path.join(root, 'narzedzia', 'straz_kluczy.py'))
+            s = importlib.util.module_from_spec(spec); spec.loader.exec_module(s)
+        self.assertIn('insider', k.PLIKI); self.assertEqual(k.LIMIT_MIN['insider'], 48 * 60)
+        self.assertIn('SEC_CONTACT', s.NAZWY); self.assertEqual(sorted(s.sekrety({'SEC_CONTACT': self.C})[0]), ['SEC_CONTACT'], 'straż pilnuje adresu kontaktowego jak klucza')
+        wf = self._rd(os.path.join(root, '.github', 'workflows', 'strona.yml'))
+        self.assertEqual(wf.count('SEC_CONTACT: ${{ secrets.SEC_CONTACT }}'), 2, 'sekret w kroku zbieracza i w straży kluczy')
+        i_z, i_s = wf.index('- name: Zbierz dane'), wf.index('- name: Straż kluczy')
+        self.assertTrue(i_z < wf.index('SEC_CONTACT:', i_z) < wf.index('run: python3 zbieraj_dane.py') < i_s < wf.rindex('SEC_CONTACT:') < wf.index('python3 narzedzia/straz_kluczy.py'))
+        html = self._rd(os.path.join(root, 'index.html'))
+        self.assertEqual(html.count('<section class="panel pcard" id="g-insider" hidden></section>'), 1); self.assertIn("srvJSON('insider')", html)
+        self.assertEqual(html.count('const EXTRA112='), 1); self.assertIn('for(const l in EXTRA112)if(I18N[l])Object.assign(I18N[l],EXTRA112[l]);', html)
+        self.assertEqual(html.count('/* v121 insiderzy */'), 1); self.assertEqual(html.count('/* ===================== v121: INSIDERZY SPÓŁEK USA'), 1)
+
+
+import io as _io_v121
+
+
+class StresV121(unittest.TestCase):
+    """v121 (obszar stres-opcje): indeks stresu finansowego (CSV rządu USA, domena publiczna) i put/call (JSON giełdy opcji — tylko ze zgodą
+    CBOE_ZGODA, bo warunki giełdy wymagają umowy): brak ≠ zero, część z błędem = poprzednia wersja z własnym czasem, historia put/call
+    dopełniana po 10 dni na przebieg, dni bez sesji zapamiętane tylko po XML magazynu plików (403 z inną treścią = błąd, nie święto),
+    plik młodszy niż 6 h z pamięci; żadnego dostępu do sieci (urlopen zablokowany)."""
+    NOW = datetime.datetime(2026, 9, 26, 14, 0, tzinfo=datetime.timezone.utc)   # sobota
+    STUBS = tuple(n for n in dir(zd) if n.startswith('build_') and n != 'build_stres')   # pozostałe źródła udają awarię (bez sieci)
+    CSV = ('﻿Date,OFR FSI,Credit,Equity valuation,Safe assets,Funding,Volatility,United States,Other advanced economies,Emerging markets\n'
+           '2026-09-14,-2.4,-1.0,-0.5,-0.3,-0.1,-0.5,-1.2,-0.8,-0.5\n'
+           '2026-09-15,-2.5,-1.1,-0.5,-0.3,-0.1,-0.5,-1.2,-0.8,-0.5\n'
+           '2026-09-16,-2.6,-1.1,-0.55,-0.3,-0.12,-0.52,-1.25,-0.8,-0.5\n'
+           '2026-09-17,,-1.1,-0.55,-0.3,-0.12,-0.52,-1.25,-0.8,-0.5\n'
+           '2026-09-18,-2.7,-1.15,-0.56,-0.3,-0.13,-0.55,-1.3,-0.82,-0.55\n'
+           '2026-09-21,-2.727,-1.15,-0.573,-0.296,-0.133,-0.574,-1.343,-0.827,-0.557\n'
+           '2026-09-22,-2.773,-1.149,-0.577,-0.296,-0.145,-0.606,-1.371,-0.842,-0.56\n'
+           'zły wiersz,1,2\n'
+           '2026-09-23,-2.663,,-0.567,-0.294,-0.166,-0.488,-1.33,-0.772,-0.562\n')
+    PC = {'ratios': [{'name': 'TOTAL PUT/CALL RATIO', 'value': '0.75'}, {'name': 'INDEX PUT/CALL RATIO', 'value': '0.95'},
+                     {'name': 'EXCHANGE TRADED PRODUCTS PUT/CALL RATIO', 'value': '0.77'}, {'name': 'EQUITY PUT/CALL RATIO', 'value': '0.52'},
+                     {'name': 'OEX PUT/CALL RATIO', 'value': '0.00'}, 'x', {'name': 'VIX', 'value': None}],
+          'SUM OF ALL PRODUCTS': [{'name': 'VOLUME', 'call': 7971692, 'put': 5968172, 'total': 13939864}]}
+
+    # treści odpowiedzi 403/404 (nagrane 26.09.2026): XML magazynu plików = pliku dla dnia nie ma; strona blokady sieci CDN = błąd
+    S3 = b'<?xml version="1.0" encoding="UTF-8"?>\n<Error><Code>AccessDenied</Code><Message>Access Denied</Message><RequestId>5THGK6X830JD2MRM</RequestId></Error>'
+    NSK = b'<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message></Error>'
+    CF = b'<!DOCTYPE html><html><head><title>Attention Required! | Cloudflare</title></head><body>Sorry, you have been blocked</body></html>'
+
+    def setUp(self):
+        zd.META['errors'].clear(); zd.META['ok'].clear(); zd.META['notes'].clear()
+        self.p_net = mock.patch.object(zd.urllib.request, 'urlopen', side_effect=AssertionError('sieć zabroniona w testach')); self.p_net.start()
+
+    def tearDown(self):
+        self.p_net.stop()
+
+    @classmethod
+    def _http(cls, code, body=None):   # świeży wyjątek (treść da się przeczytać raz); domyślnie XML magazynu plików = „pliku nie ma”
+        return zd.urllib.error.HTTPError('u', code, 'x', {}, _io_v121.BytesIO(cls.S3 if body is None else body))
+
+    @classmethod
+    def _raise(cls, code, body=None):   # side_effect: każde wywołanie = nowy wyjątek z pełną treścią
+        def f(*a, **k):
+            raise cls._http(code, body)
+        return f
+
+    def test_fsi_parse_missing_is_not_zero(self):
+        f = zd.fsi_parse(self.CSV)
+        self.assertEqual((f['date'], f['value']), ('2026-09-23', -2.663))
+        self.assertEqual(f['d1'], 0.11, 'wobec poprzedniego dnia serii (22.09)'); self.assertEqual(f['d5'], -0.163, 'wobec 5 dni serii wstecz (15.09; 17.09 bez wartości wypada)')
+        self.assertEqual([r[0] for r in f['hist']], ['2026-09-14', '2026-09-15', '2026-09-16', '2026-09-18', '2026-09-21', '2026-09-22', '2026-09-23'], 'dzień bez liczby głównej wypada, nie zero; zły wiersz pominięty')
+        self.assertEqual(f['hist'][-1], ['2026-09-23', -2.663])
+        self.assertEqual(f['cols']['credit'], {'v': None, 'd1': None}, 'składowa bez liczby → brak, nie zero')
+        self.assertEqual(f['cols']['equity'], {'v': -0.567, 'd1': 0.01}); self.assertEqual(f['cols']['vol']['d1'], 0.118); self.assertEqual(f['cols']['em']['v'], -0.562)
+        self.assertEqual(sorted(f['cols']), ['ae', 'credit', 'em', 'equity', 'funding', 'safe', 'us', 'vol'])
+        g = zd.fsi_parse(self.CSV, dni=3)
+        self.assertEqual(len(g['hist']), 3); self.assertEqual(g['d1'], 0.11); self.assertIsNone(g['d5'], 'za krótka seria: brak, nie zero')
+        h = zd.fsi_parse('Date,OFR FSI,Funding\n2026-09-23,1.5,\n')
+        self.assertEqual((h['value'], h['d1'], h['cols']), (1.5, None, {'funding': {'v': None, 'd1': None}}), 'tylko obecne kolumny; jedna obserwacja = bez zmian')
+        for bad in ('', 'Data,X\n1,2\n', 'Date,OFR FSI\n2026-09-23,\n', 'Date,OFR FSI\nzle,1\n'):
+            with self.assertRaises(ValueError):
+                zd.fsi_parse(bad)
+
+    def test_pc_parse_zero_is_missing(self):
+        self.assertEqual(zd.pc_parse(self.PC), {'total': 0.75, 'equity': 0.52, 'index': 0.95})
+        self.assertEqual(zd.pc_parse({'ratios': [{'name': 'Total Put/Call Ratio', 'value': '1,02'}, {'name': 'EQUITY PUT/CALL RATIO', 'value': '0.00'}, {'name': 'INDEX PUT/CALL RATIO', 'value': 'n/a'}]}),
+                         {'total': 1.02, 'equity': None, 'index': None}, '„0.00” i tekst = brak, nie zero; przecinek dziesiętny przyjęty')
+        for bad in ({}, [], {'ratios': 'x'}, {'ratios': []}, {'ratios': [{'name': 'TOTAL PUT/CALL RATIO', 'value': '0.00'}]}, {'ratios': [{'name': 'OEX PUT/CALL RATIO', 'value': '1'}]}):
+            with self.assertRaises(ValueError):
+                zd.pc_parse(bad)
+
+    def test_pc_dni_weekdays_window_and_limit(self):
+        D = datetime.date
+        self.assertEqual(zd.pc_dni({'2026-09-24'}, {'2026-09-23'}, D(2026, 9, 26), n=4), [D(2026, 9, 25), D(2026, 9, 22), D(2026, 9, 21), D(2026, 9, 18)],
+                         'sobota: od piątku wstecz, bez dnia w historii (24) i dnia bez sesji (23), bez weekendu, najwyżej n')
+        self.assertEqual(zd.pc_dni(set(), set(), D(2026, 9, 28), n=2), [D(2026, 9, 28), D(2026, 9, 25)], 'poniedziałek: dziś, potem piątek')
+        self.assertEqual(zd.pc_dni({'2026-09-21', '2026-09-22', '2026-09-24'}, set(), D(2026, 9, 26), n=10, dni=3), [D(2026, 9, 25), D(2026, 9, 23)],
+                         'pełna historia (≥ dni wierszy): nie starsze niż jej najstarszy dzień')
+        far = zd.pc_dni(set(), set(), D(2026, 9, 26), n=1000, dni=300)
+        self.assertTrue(300 < len(far) < 340 and far[-1] >= D(2026, 9, 26) - datetime.timedelta(days=460) and all(d.weekday() < 5 for d in far), 'okno ≈ 1,5 × 300 + 10 dni kalendarzowych')
+        self.assertEqual(zd.pc_prog(D(2026, 9, 26)), D(2026, 9, 26) - datetime.timedelta(days=460))
+
+    def test_pc_czesc_backfill_missing_days_and_errors(self):
+        def pc(v):
+            return {'ratios': [{'name': 'TOTAL PUT/CALL RATIO', 'value': str(v)}, {'name': 'EQUITY PUT/CALL RATIO', 'value': str(round(v - 0.2, 2))}, {'name': 'INDEX PUT/CALL RATIO', 'value': '0.00'}]}
+        resp = {'2026-09-25': 403, '2026-09-24': pc(0.8), '2026-09-23': (404, self.NSK), '2026-09-22': pc(0.7), '2026-09-21': pc(0.9), '2026-09-18': pc(1.1), '2026-09-17': 500}
+        calls, naps = [], []
+
+        def gj(url, headers=None, timeout=30):
+            self.assertLessEqual(timeout, zd.PC_TIMEOUT); self.assertTrue(url.startswith(zd.PC_URL.split('{')[0]) and url.endswith('_daily_options'), url)
+            d = url.rsplit('/', 1)[1][:10]; calls.append(d)
+            r = resp.get(d, 404)
+            if isinstance(r, (int, tuple)):
+                raise self._http(*r) if isinstance(r, tuple) else self._http(r)
+            return r
+        prev = {'hist': [['2026-09-16', 0.6, 0.4, 0.9], ['2026-09-15', 0.65, None, 0.95], ['zła', 1, 1, 1], ['2026-09-14', 0, -1, 'x'], 'x'], 'brak': ['2026-09-07', 'x', 3]}
+        errs = []
+        with mock.patch.object(zd, 'get_json', side_effect=gj):
+            p, got = zd.pc_czesc(prev, self.NOW, errs, sleep=naps.append)
+        self.assertEqual(calls, ['2026-09-25', '2026-09-24', '2026-09-23', '2026-09-22', '2026-09-21', '2026-09-18', '2026-09-17'],
+                         'dni robocze od dziś wstecz, bez dni w historii (16, 15, 14) i bez zapamiętanego dnia bez sesji (7.09); HTTP 500 = koniec części')
+        self.assertEqual(got, 4); self.assertEqual(errs, ['put/call 2026-09-17: HTTP 500']); self.assertEqual(naps, [zd.PC_TEMPO] * 6, 'odstęp między zapytaniami')
+        self.assertEqual((p['date'], p['total'], p['equity'], p['index']), ('2026-09-24', 0.8, 0.6, None), 'najnowszy pobrany dzień; „0.00” = brak, nie zero')
+        self.assertEqual([r[0] for r in p['hist']], ['2026-09-14', '2026-09-15', '2026-09-16', '2026-09-18', '2026-09-21', '2026-09-22', '2026-09-24'], 'rosnąco; śmieci odrzucone')
+        self.assertEqual(p['hist'][0], ['2026-09-14', None, None, None], 'stare zero, liczba ujemna i tekst → brak'); self.assertEqual(p['n'], 7)
+        self.assertEqual(p['brak'], ['2026-09-07', '2026-09-23'], '23.09 (3 dni temu, 404 NoSuchKey) = dzień bez sesji; 25.09 (wczoraj, 403 AccessDenied) = plik może dopiero powstać — bez zapisu')
+        errs2, naps2 = [], []
+        with mock.patch.object(zd, 'get_json', side_effect=gj), mock.patch.object(zd, 'PC_DNI', 3):
+            q, got2 = zd.pc_czesc(p, self.NOW, errs2, sleep=naps2.append)
+        self.assertEqual([r[0] for r in q['hist']], ['2026-09-21', '2026-09-22', '2026-09-24'], 'obcięte do PC_DNI ostatnich sesji'); self.assertEqual(got2, 0)
+        self.assertEqual(errs2, ['put/call 2026-09-17: HTTP 500'], 'pełna historia: pytany tylko 25.09 (dopiero powstaje) i 17.09 (luka w oknie)')
+        self.assertEqual(q['brak'], ['2026-09-23'], 'dni bez sesji przycięte do okna (7.09 poza oknem 3 sesji)')
+        with mock.patch.object(zd, 'get_json', side_effect=self._raise(403)), self.assertRaises(ValueError):
+            zd.pc_czesc(None, self.NOW, [], sleep=lambda s: None)
+        with mock.patch.object(zd, 'get_json', side_effect=RuntimeError('padło')):
+            r, g = zd.pc_czesc({'hist': [['2026-09-24', 0.8, 0.6, 0.9]]}, self.NOW, errs3 := [], sleep=lambda s: None)
+        self.assertEqual((r['date'], g), ('2026-09-24', 0)); self.assertEqual(errs3, ['put/call 2026-09-25: padło'], 'inny błąd = koniec części, co jest — zostaje')
+
+    def test_pc_403_without_storage_xml_is_error_not_holiday(self):
+        self.assertTrue(zd.pc_brak_pliku(self._http(403)) and zd.pc_brak_pliku(self._http(404, self.NSK)), 'XML magazynu plików = pliku nie ma')
+        for body in (self.CF, b'', b'error code: 1020', b'<Error><Code>SlowDown</Code></Error>'):
+            self.assertFalse(zd.pc_brak_pliku(self._http(403, body)), body[:30])
+        bad = mock.Mock(); bad.read.side_effect = OSError('zerwane połączenie')
+        self.assertFalse(zd.pc_brak_pliku(bad), 'błąd odczytu treści = nie wiemy = błąd')
+        # stary dzień z blokadą CDN: błąd i koniec części; dzień NIE trafia do dni bez sesji, historia zostaje
+        resp = {'2026-09-25': 403, '2026-09-23': (403, self.CF), '2026-09-22': 403}
+        calls = []
+
+        def gj(url, headers=None, timeout=30):
+            d = url.rsplit('/', 1)[1][:10]; calls.append(d)
+            r = resp.get(d, 403)
+            raise self._http(*r) if isinstance(r, tuple) else self._http(r)
+        prev = {'hist': [['2026-09-24', 0.8, 0.6, 0.9]], 'brak': ['2026-09-07']}
+        with mock.patch.object(zd, 'get_json', side_effect=gj):
+            p, got = zd.pc_czesc(prev, self.NOW, errs := [], sleep=lambda s: None)
+        self.assertEqual(calls, ['2026-09-25', '2026-09-23'], 'po blokadzie koniec zapytań w tym przebiegu')
+        self.assertEqual(errs, ['put/call 2026-09-23: HTTP 403 bez znacznika braku pliku']); self.assertEqual(got, 0)
+        self.assertEqual(p['brak'], ['2026-09-07'], 'ani 23.09 (blokada), ani 25.09 (młody) nie są dniami bez sesji')
+        self.assertEqual(p['hist'], [['2026-09-24', 0.8, 0.6, 0.9]])
+        # młody dzień z pustą odpowiedzią 404 — też błąd (nie „plik dopiero powstaje”)
+        with mock.patch.object(zd, 'get_json', side_effect=self._raise(404, b'')):
+            q, _g = zd.pc_czesc(prev, self.NOW, errs2 := [], sleep=lambda s: None)
+        self.assertEqual(errs2, ['put/call 2026-09-25: HTTP 404 bez znacznika braku pliku']); self.assertEqual(q['brak'], ['2026-09-07'])
+        # w budowniczym: część pc z błędem (ok False), dane i czas części z poprzedniego pliku, błąd w META
+        prev_f = {'at': '2026-09-26T07:00:00+00:00', 'part_at': {'fsi': '2026-09-26T07:00:00+00:00', 'pc': '2026-09-25T07:00:00+00:00'}, 'pc': dict(p, date='2026-09-24')}
+        with mock.patch.object(zd, 'get', return_value=(200, self.CSV)), mock.patch.object(zd, 'get_json', side_effect=self._raise(403, self.CF)), \
+                mock.patch.object(zd, 'PC_ZGODA', 'x'), mock.patch.object(zd, 'NOW', self.NOW.isoformat()), mock.patch.object(zd.time, 'sleep', lambda s: None):
+            o = zd.build_stres(prev_f, self.NOW)
+        self.assertEqual(o['ok'], {'fsi': True, 'pc': False}); self.assertEqual(o['part_at']['pc'], '2026-09-25T07:00:00+00:00'); self.assertEqual(o['pc']['brak'], ['2026-09-07'])
+        self.assertEqual(zd.META['errors'], ['Stres: put/call 2026-09-25: HTTP 403 bez znacznika braku pliku'])
+
+    def test_build_parts_independent_and_consent_gate(self):
+        urls = []
+
+        def gt(url, headers=None, timeout=30):
+            urls.append((url, timeout)); return 200, self.CSV
+        with mock.patch.object(zd, 'get', side_effect=gt), mock.patch.object(zd, 'get_json', side_effect=AssertionError('bez zgody nie pytać o put/call')), \
+                mock.patch.object(zd, 'PC_ZGODA', ''), mock.patch.object(zd, 'NOW', self.NOW.isoformat()):
+            o = zd.build_stres(None, self.NOW)
+        self.assertEqual(urls, [(zd.FSI_URL, zd.FSI_TIMEOUT)])
+        self.assertEqual(o['ok'], {'fsi': True}); self.assertTrue(o['pc_off']); self.assertNotIn('pc', o); self.assertEqual(o['part_at'], {'fsi': self.NOW.isoformat()})
+        self.assertEqual((o['fsi']['date'], o['fsi']['value'], o['fsi']['d1'], len(o['fsi']['hist'])), ('2026-09-23', -2.663, 0.11, 7)); self.assertEqual(zd.META['errors'], [])
+        self.assertNotIn('put/call', o['src']); self.assertEqual(zd.stres_czesci(), ('fsi',))
+        self.assertNotIn('Cboe', json.dumps(o)); self.assertNotIn('OFR', o['src'], 'nazwy dostawców tylko na stronie Źródła')
+        # ze zgodą: obie części; część pc dopełniona z poprzedniego pliku (24.09 już jest; 25.09 pobrany; reszta okna bez pliku = dni bez sesji)
+        prev = {'at': '2026-09-26T07:00:00+00:00', 'ok': {'fsi': True}, 'part_at': {'fsi': '2026-09-26T07:00:00+00:00'}, 'fsi': {'date': '2026-09-22', 'value': -2.773, 'hist': []},
+                'pc': {'hist': [['2026-09-24', 0.8, 0.6, 0.9]], 'brak': []}}
+
+        def gj(url, headers=None, timeout=30):
+            if url.endswith('2026-09-25_daily_options'):
+                return self.PC
+            raise self._http(403)
+        with mock.patch.object(zd, 'get', side_effect=gt), mock.patch.object(zd, 'get_json', side_effect=gj), mock.patch.object(zd, 'PC_ZGODA', 'umowa 2026-10-01'), \
+                mock.patch.object(zd, 'NOW', self.NOW.isoformat()), mock.patch.object(zd.time, 'sleep', lambda s: None):
+            o2 = zd.build_stres(prev, self.NOW); czesci = zd.stres_czesci()
+        self.assertEqual(o2['ok'], {'fsi': True, 'pc': True}); self.assertFalse(o2['pc_off']); self.assertEqual(czesci, ('fsi', 'pc')); self.assertIn('put/call', o2['src'])
+        self.assertEqual((o2['pc']['date'], o2['pc']['total'], o2['pc']['equity'], o2['pc']['index']), ('2026-09-25', 0.75, 0.52, 0.95))
+        self.assertEqual([r[0] for r in o2['pc']['hist']], ['2026-09-24', '2026-09-25']); self.assertEqual(len(o2['pc']['brak']), 9, '10 dni na przebieg: 9 bez pliku starszych niż 2 dni')
+        self.assertEqual(o2['part_at'], {'fsi': self.NOW.isoformat(), 'pc': self.NOW.isoformat()}); self.assertEqual(zd.META['errors'], [])
+        # awaria obu źródeł: poprzednie części z własnym czasem; błąd w META, nigdy zera
+        with mock.patch.object(zd, 'get', side_effect=RuntimeError('timeout')), mock.patch.object(zd, 'get_json', side_effect=RuntimeError('padło')), \
+                mock.patch.object(zd, 'PC_ZGODA', 'x'), mock.patch.object(zd, 'NOW', self.NOW.isoformat()), mock.patch.object(zd.time, 'sleep', lambda s: None):
+            o3 = zd.build_stres(o2, self.NOW)
+        self.assertEqual(o3['ok'], {'fsi': False, 'pc': False}); self.assertIs(o3['fsi'], o2['fsi']); self.assertEqual(o3['part_at'], o2['part_at'], 'części z błędem: poprzednie z własnym czasem')
+        self.assertEqual(o3['pc']['hist'], o2['pc']['hist'], 'put/call: historia zostaje, nowy dzień nie doszedł')
+        self.assertEqual(zd.META['errors'], ['Stres: indeks stresu: timeout; put/call 2026-09-10: padło'], '24 i 25.09 już są, 11–23.09 zapamiętane jako dni bez sesji → pytany 10.09')
+        # bez zgody stare put/call nie są przepisywane; zgoda + brak jakichkolwiek danych pc = część z błędem bez klucza pc
+        with mock.patch.object(zd, 'get', side_effect=gt), mock.patch.object(zd, 'PC_ZGODA', ''), mock.patch.object(zd, 'NOW', self.NOW.isoformat()):
+            o4 = zd.build_stres(o2, self.NOW)
+        self.assertNotIn('pc', o4); self.assertTrue(o4['pc_off']); self.assertEqual(o4['ok'], {'fsi': True})
+        zd.META['errors'].clear()
+        with mock.patch.object(zd, 'get', side_effect=gt), mock.patch.object(zd, 'get_json', side_effect=self._raise(403)), mock.patch.object(zd, 'PC_ZGODA', 'x'), \
+                mock.patch.object(zd, 'NOW', self.NOW.isoformat()), mock.patch.object(zd.time, 'sleep', lambda s: None):
+            o5 = zd.build_stres(None, self.NOW)
+        self.assertEqual(o5['ok'], {'fsi': True, 'pc': False}); self.assertNotIn('pc', o5); self.assertEqual(zd.META['errors'], ['Stres: put/call: brak danych'])
+        with mock.patch.object(zd, 'get', side_effect=RuntimeError('timeout')), mock.patch.object(zd, 'PC_ZGODA', ''), self.assertRaises(RuntimeError):
+            zd.build_stres(None, self.NOW)
+
+    def test_main_wiring_cache_consent_and_failure(self):
+        stubs = [mock.patch.object(zd, f, side_effect=RuntimeError('offline'), create=True) for f in self.STUBS]
+        for s in stubs:
+            s.start()
+        try:
+            saved, prev, calls = {}, {}, []
+            env = {k: '' for k in ('SOSOVALUE_KEY', 'COINGECKO_KEY', 'FINNHUB_KEY', 'TWELVEDATA_KEY', 'COINMARKETCAP_KEY', 'FRED_KEY', 'EIA_KEY', 'BLS_KEY', 'BEA_KEY',
+                                   'EODHD_KEY', 'MASSIVE_KEY', 'TIINGO_KEY', 'FMP_KEY', 'ALPHAVANTAGE_KEY', 'ETHERSCAN_KEY', 'SITE_URL', 'CACHE_DIR')}
+            built = {'at': zd.NOW, 'ok': {'fsi': True}, 'part_at': {'fsi': zd.NOW}, 'fsi': {'date': '2026-09-23', 'value': -2.663}, 'pc_off': True}
+            built2 = {'at': zd.NOW, 'ok': {'fsi': True, 'pc': True}, 'part_at': {'fsi': zd.NOW, 'pc': zd.NOW}, 'fsi': {'date': '2026-09-23', 'value': -2.663}, 'pc': {'date': '2026-09-25', 'total': 0.75}, 'pc_off': False}
+
+            def run(zgoda, builder):
+                with mock.patch.dict(os.environ, env, clear=False), mock.patch.object(zd, 'save', lambda n, o: saved.__setitem__(n, o)), \
+                        mock.patch.object(zd, 'previous', lambda n: prev.get(n)), mock.patch.object(zd, 'build_stres', builder), mock.patch.object(zd, 'PC_ZGODA', zgoda):
+                    zd.main()
+            run('', lambda p, now=None: calls.append(p) or built)
+            self.assertEqual(calls, [None]); self.assertIs(saved['stres'], built); self.assertIs(zd.META['ok']['stres'], True)
+            self.assertIn('Stres: część put/call wyłączona (zmienna CBOE_ZGODA pusta)', zd.META['notes'], 'brak zgody = neutralna informacja'); self.assertFalse(any(e.startswith('Stres') for e in zd.META['errors']))
+            # młodszy niż 6 h, wszystkie oczekiwane części w porządku, ten sam stan zgody → z pamięci
+            prev['stres'] = {'at': _iso(10), 'ok': {'fsi': True}, 'pc_off': True}; calls.clear(); zd.META['ok'].clear(); zd.META['notes'].clear()
+            run('', mock.Mock(side_effect=AssertionError('plik młodszy niż 6 h — nie budować')))
+            self.assertIs(saved['stres'], prev['stres']); self.assertEqual(zd.META['ok']['stres'], 'cached')
+            # pojawiła się zgoda → przebudowa mimo młodego pliku (część pc oczekiwana); bez noty o braku zgody
+            zd.META['notes'].clear()
+            run('umowa 2026-10-01', lambda p, now=None: calls.append(p) or built2)
+            self.assertEqual(calls, [prev['stres']]); self.assertIs(saved['stres'], built2); self.assertIs(zd.META['ok']['stres'], True)
+            self.assertFalse(any('CBOE_ZGODA' in n for n in zd.META['notes']))
+            # zgoda cofnięta → przebudowa (stare put/call nie zostają); młody plik z częścią pc z błędem: ponowienie dopiero po godzinie
+            prev['stres'] = dict(built2, at=_iso(10)); calls.clear()
+            run('', lambda p, now=None: calls.append(p) or built)
+            self.assertEqual(len(calls), 1, 'zmiana stanu zgody = przebudowa')
+            prev['stres'] = {'at': _iso(10), 'ok': {'fsi': True, 'pc': False}, 'pc_off': False}; calls.clear(); zd.META['ok'].clear()
+            run('x', mock.Mock(side_effect=AssertionError('część z błędem młodsza niż godzina — nie budować')))
+            self.assertEqual(zd.META['ok']['stres'], 'cached')
+            prev['stres']['at'] = _iso(75)
+            run('x', lambda p, now=None: calls.append(p) or built2)
+            self.assertEqual(len(calls), 1, 'po godzinie część z błędem ponowiona')
+            # awaria → poprzedni plik i błąd; częściowy wynik (część pc z błędem) = ok False
+            prev['stres']['at'] = _iso(400); zd.META['ok'].clear(); zd.META['errors'].clear()
+            run('x', mock.Mock(side_effect=RuntimeError('offline')))
+            self.assertIs(saved['stres'], prev['stres']); self.assertIs(zd.META['ok']['stres'], False); self.assertIn('Stres: offline', zd.META['errors'])
+            run('x', lambda p, now=None: dict(built2, ok={'fsi': True, 'pc': False}))
+            self.assertIs(zd.META['ok']['stres'], False)
+            prev.clear(); saved.clear(); zd.META['ok'].clear()
+            run('', mock.Mock(side_effect=RuntimeError('offline')))
+            self.assertNotIn('stres', saved, 'bez poprzedniego pliku i z awarią — żadnego pliku (nie pustka)'); self.assertIs(zd.META['ok']['stres'], False)
+        finally:
+            for s in stubs:
+                s.stop()
+
+    def test_kontrola_page_docs_and_flow_stubs(self):
+        import re as _re
+        root = os.path.dirname(os.path.abspath(__file__))
+
+        def rd(p):
+            with open(p, encoding='utf-8') as f:
+                return f.read()
+        k = rd(os.path.join(root, 'narzedzia', 'kontrola.py'))
+        self.assertRegex(k, r"PLIKI = \[[^\]]*'stres'[^\]]*\]"); self.assertRegex(k, r"LIMIT_MIN = \{[^}]*'stres': 24 \* 60[^}]*\}")
+        html = rd(os.path.join(root, 'index.html'))
+        self.assertIn("srvJSON('stres')", html); self.assertEqual(html.count('<section class="panel pcard" id="g-stres" hidden></section>'), 1)
+        src = rd(zd.__file__)
+        self.assertIn("prev_st = previous('stres')", src); self.assertIn("META['errors'].append(mask(f'Stres: {e}')); META['ok']['stres'] = False", src)
+        self.assertIn("if prev_st: save('stres', prev_st)", src); self.assertLess(src.index("prev_st = previous('stres')"), src.index("prev_ix = previous('indeksy')"))
+        self.assertIn('CBOE_ZGODA', zd.build_stres.__doc__); self.assertIn('Use of Content', zd.build_stres.__doc__, 'ustalenie o warunkach giełdy zapisane w docstringu')
+        me = rd(__file__); a = me.index('class StresV121('); b = me.find('\nclass ', a + 1); b = len(me) if b < 0 else b; rest = me[:a] + me[b:]
+        tups = [m.group(0) for m in _re.finditer(r"\('build_\w+'(?:,\s*'build_\w+')+\)", rest) if "'build_wieloryby'" in m.group(0)]
+        self.assertTrue(len(tups) >= 18 and all("'build_stres', 'build_wieloryby'" in x for x in tups), 'każda lista zaślepek przebiegu głównego (z build_wieloryby) zna build_stres')
+        i = rest.index('def test_meta_is_always_written'); j = rest.index('\n    def ', i + 1)
+        self.assertRegex(rest[i:j], r"startswith\(\('instytucje', 'Stres', ", 'etykieta „Stres” w filtrze błędów meta (po „instytucje”)')
+        self.assertEqual(zd.pc_parse.__doc__.count('None'), 1); self.assertTrue(zd.FSI_URL.startswith('https://') and zd.PC_URL.startswith('https://'))
+
+
+class AukcjeV121(unittest.TestCase):
+    """v121: aukcje papierów skarbowych USA — wiersze z danych fiskalnych i z serwisu aukcyjnego, przyszłe aukcje i CMB pominięte,
+    udziały od części konkurencyjnej (razem 100%), termin bieżący gdy pełny (pierwotny tylko przy niepełnym terminie dodatkowej transzy),
+    data niemożliwa pominięta, rentowność wg rodzaju, mediany 12 miesięcy per papier (≥ 3 aukcje), zapas po awarii źródła głównego (także
+    częściowy), przebieg główny (co 6 h, ponowienie po godzinie, poprzedni plik po awarii), kontrola (PLIKI, limit 24 h).
+    Bez sieci: get_json zaślepione."""
+    NOW = datetime.datetime(2026, 9, 26, 12, 0, tzinfo=datetime.timezone.utc)
+
+    def setUp(self):
+        zd.META['errors'].clear(); zd.META['ok'].clear(); zd.META['notes'].clear()
+
+    @staticmethod
+    def _fd(date, typ, term, btc, ind, dr, pd, tot, hy=None, hi=None, hm=None, org=None, reopen='No', cmb='No', frn='No', tips='No', cusip='X', comp='auto'):
+        f = lambda v: 'null' if v is None else (f'{v:.6f}' if isinstance(v, float) else str(v))   # noqa: E731 — pola tekstowe jak w interfejsie
+        if comp == 'auto':
+            comp = None if None in (ind, dr, pd) else ind + dr + pd
+        return {'auction_date': date, 'security_type': typ, 'security_term': term, 'original_security_term': org or term, 'reopening': reopen,
+                'cash_management_bill_cmb': cmb, 'floating_rate': frn, 'inflation_index_security': tips, 'bid_to_cover_ratio': f(btc),
+                'comp_accepted': f(comp), 'indirect_bidder_accepted': f(ind), 'direct_bidder_accepted': f(dr), 'primary_dealer_accepted': f(pd),
+                'total_accepted': f(tot), 'high_yield': f(hy), 'high_investment_rate': f(hi), 'high_discnt_margin': f(hm), 'cusip': cusip}
+
+    @staticmethod
+    def _td(row):
+        """Ten sam wiersz w kształcie serwisu aukcyjnego (camelCase, rodzaj w polu type, data z godziną)."""
+        typ = row['security_type']
+        if row['cash_management_bill_cmb'] == 'Yes': typ = 'CMB'
+        elif row['floating_rate'] == 'Yes': typ = 'FRN'
+        elif row['inflation_index_security'] == 'Yes': typ = 'TIPS'
+        n = lambda v: '' if v == 'null' else v   # noqa: E731 — serwis aukcyjny daje pusty tekst zamiast „null”
+        return {'auctionDate': row['auction_date'] + 'T00:00:00', 'type': typ, 'securityType': row['security_type'], 'securityTerm': row['security_term'],
+                'originalSecurityTerm': row['original_security_term'], 'reopening': row['reopening'], 'bidToCoverRatio': n(row['bid_to_cover_ratio']),
+                'competitiveAccepted': n(row['comp_accepted']), 'indirectBidderAccepted': n(row['indirect_bidder_accepted']),
+                'directBidderAccepted': n(row['direct_bidder_accepted']), 'primaryDealerAccepted': n(row['primary_dealer_accepted']),
+                'totalAccepted': n(row['total_accepted']), 'highYield': n(row['high_yield']), 'highInvestmentRate': n(row['high_investment_rate']),
+                'highDiscountMargin': n(row['high_discnt_margin']), 'cusip': row['cusip']}
+
+    def _data(self):
+        F = self._fd
+        rows = [F('2026-09-29', 'Bill', '52-Week', None, None, None, None, None, cusip='FUT1'),                                     # przyszła: bez wyników
+                F('2026-09-28', 'Note', '2-Year', 0.0, 1.0, 1.0, 1.0, 3.0, hy=4.0, cusip='ZERO'),                                    # zero nie jest wynikiem
+                F('2026-09-24', 'Note', '7-Year', 2.42, 24869544500, 13163710000, 5447550000, 50624250500, hy=5.085, cusip='91282CRM5'),   # prawdziwa (24.09.2026)
+                F('2026-09-24', 'Bill', '8-Week', 2.76, 48063244000, 4915000000, 28753160000, 92026009800, hi=4.071, org='17-Week', reopen='Yes', cusip='912797VY0'),
+                F('2026-09-23', 'Note', '1-Year 10-Month', 2.63, 16537912500, 5000000000, 6451850000, 28000087000, hm=0.04, org='2-Year', reopen='Yes', frn='Yes', cusip='FRN1'),
+                F('2026-09-17', 'Note', '9-Year 10-Month', 2.24, 11164960000, 3000000000, 4719024000, 21860454000, hy=2.653, org='10-Year', reopen='Yes', tips='Yes', cusip='TIPS1'),
+                F('2026-09-09', 'Note', '9-Year 11-Month', 2.71, 30804090000, 4000000000, 3000000000, 39000040000, hy=4.834, org='10-Year', reopen='Yes', cusip='N10R'),
+                F('2026-09-02', 'Note', '2-Year', 2.60, 1.0, 1.0, 1.0, 69000000000, hy=4.7, cusip='N2A'),
+                F('2026-08-05', 'Note', '2-Year', 2.50, None, 1.0, 1.0, 69000000000, hy=4.6, cusip='N2B', comp=3.0),                # bez kwoty pośrednich: udział = brak
+                F('2026-05-21', 'Bill', '27-Day', 4.60, 3857175000, 1.0, 1.0, 25000301000, hi=3.665, cmb='Yes', cusip='CMB1'),      # CMB pominięty
+                {'auction_date': 'bad', 'security_type': 'Bill', 'security_term': '4-Week', 'bid_to_cover_ratio': '2.5', 'total_accepted': '5'},
+                'śmieć', None]
+        # 7-latki co miesiąc (24. dnia): 2025-08-24 … 2026-08-24 (13 sztuk; okno 365 dni od 24.09.2026 zaczyna się 24.09.2025 → 2025-08-24 poza oknem)
+        months = [(2025, m) for m in range(8, 13)] + [(2026, m) for m in range(1, 9)]
+        for i, (y, m) in enumerate(months):
+            rows.append(F(f'{y}-{m:02d}-24', 'Note', '7-Year', 2.30 + 0.01 * i, 25e9 + i * 1e8, 13e9, 6e9, 44e9, hy=4.5 + 0.01 * i, cusip=f'N7-{i}'))
+        return rows
+
+    def test_wiersze_z_danych_fiskalnych(self):
+        w = zd.auk_wiersz(self._data()[2], 'fiscaldata')
+        self.assertEqual((w['date'], w['type'], w['term'], w['k'], w['reopen'], w['btc']), ('2026-09-24', 'Note', '7-Year', 'Note 7-Year', False, 2.42))
+        self.assertEqual((w['indirect_pct'], w['direct_pct'], w['dealer_pct']), (57.2, 30.3, 12.5), 'udziały od części konkurencyjnej: razem 100%')
+        self.assertEqual((w['yield'], w['ykind'], w['accepted_bln'], w['cusip']), (5.085, 'yld', 50.624, '91282CRM5'))
+        b = zd.auk_wiersz(self._data()[3], 'fiscaldata')
+        self.assertEqual((b['type'], b['term'], b['k'], b['reopen'], b['yield'], b['ykind']), ('Bill', '8-Week', 'Bill 8-Week', False, 4.071, 'inv'), 'bon: termin bieżący, nie pierwotny 17-Week; „dodatkowa transza” bonu nie jest informacją')
+        self.assertEqual((b['indirect_pct'], b['direct_pct'], b['dealer_pct']), (58.8, 6.0, 35.2))
+        f = zd.auk_wiersz(self._data()[4], 'fiscaldata'); self.assertEqual((f['type'], f['term'], f['yield'], f['ykind']), ('FRN', '2-Year', 0.04, 'dm'))
+        t = zd.auk_wiersz(self._data()[5], 'fiscaldata'); self.assertEqual((t['type'], t['term'], t['k'], t['ykind']), ('TIPS', '10-Year', 'TIPS 10-Year', 'real'))
+        r = zd.auk_wiersz(self._data()[6], 'fiscaldata'); self.assertEqual((r['type'], r['term'], r['reopen']), ('Note', '10-Year', True), 'dodatkowa transza 10-latki = 10 lat')
+        n = zd.auk_wiersz(self._data()[8], 'fiscaldata'); self.assertEqual((n['indirect_pct'], n['direct_pct'], n['dealer_pct']), (None, 33.3, 33.3), 'brak kwoty pośrednich = brak, nie 0')
+        for i in (0, 1, 9, 10, 11, 12):
+            self.assertIsNone(zd.auk_wiersz(self._data()[i], 'fiscaldata'), f'wiersz {i}: bez wyników, zero, CMB, zła data albo śmieć = pominięty')
+        self.assertEqual([zd._auk_num(v) for v in ('2.420000', 'null', '', None, 'x', float('nan'), 3, True)], [2.42, None, None, None, None, None, 3.0, None])
+
+    def test_termin_dodatkowej_transzy_i_data_niemozliwa(self):
+        F = self._fd
+        # prawdziwy wiersz danych fiskalnych z 26.01.2026: aukcja 2-latki przez dodatkową transzę 5-latki z 2023 r. (CUSIP 91282CGH8)
+        r2 = F('2026-01-26', 'Note', '2-Year', 2.75, 44206733000, 19407500000, 5031125000, 73862272800, hy=3.58, org='5-Year', reopen='Yes', cusip='91282CGH8')
+        w = zd.auk_wiersz(r2, 'fiscaldata')
+        self.assertEqual((w['type'], w['term'], w['k'], w['reopen'], w['btc'], w['indirect_pct']), ('Note', '2-Year', 'Note 2-Year', True, 2.75, 64.4),
+                         'termin pełny = termin bieżący: to aukcja 2-latki, nie 5-latki')
+        self.assertEqual(zd.auk_wiersz(self._td(r2), 'treasurydirect'), w, 'zapas daje to samo')
+        # termin niepełny dodatkowej transzy = termin pierwotny (wszystkie kształty z danych 26.09.2026)
+        for typ, now_t, org, frn, tips, k in [('Note', '9-Year 11-Month', '10-Year', 'No', 'No', 'Note 10-Year'), ('Bond', '19-Year 10-Month', '20-Year', 'No', 'No', 'Bond 20-Year'),
+                                              ('Bond', '29-Year 11-Month', '30-Year', 'No', 'No', 'Bond 30-Year'), ('Note', '1-Year 10-Month', '2-Year', 'Yes', 'No', 'FRN 2-Year'),
+                                              ('Note', '4-Year 10-Month', '5-Year', 'No', 'Yes', 'TIPS 5-Year'), ('Note', '9-Year 8-Month', '10-Year', 'No', 'Yes', 'TIPS 10-Year'),
+                                              ('Bond', '29-Year 6-Month', '30-Year', 'No', 'Yes', 'TIPS 30-Year'), ('Note', '', '3-Year', 'No', 'No', 'Note 3-Year')]:
+            x = zd.auk_wiersz(F('2026-09-09', typ, now_t, 2.5, 6e10, 1e10, 1e10, 8e10, hy=4.0, hm=0.1, org=org, reopen='Yes', frn=frn, tips=tips), 'fiscaldata')
+            self.assertEqual((x['k'], x['reopen']), (k, True), now_t)
+        # mediany: 2-latka z dodatkowej transzy liczy się do 2-latek, 5-latka ma tylko prawdziwe 5-latki
+        rows = [r2] + [F(f'2026-0{m}-24', 'Note', '2-Year', 2.6, 5e10, 1e10, 1e10, 7e10, hy=4.0, cusip=f'N2-{m}') for m in (2, 3)] \
+            + [F(f'2026-0{m}-25', 'Note', '5-Year', 2.3, 5e10, 1e10, 1e10, 7e10, hy=4.0, cusip=f'N5-{m}') for m in (2, 3, 4)]
+        med = zd.auk_mediany([zd.auk_wiersz(r, 'fiscaldata') for r in rows])
+        self.assertEqual((med['Note 2-Year']['n'], med['Note 5-Year']['n'], med['Note 2-Year']['from']), (3, 3, '2026-01-26'))
+        # data niemożliwa: wiersz pominięty (nie wywraca median ani całego przebiegu)
+        for bad in ('2026-19-24', '2026-02-30', '0000-01-01'):
+            self.assertIsNone(zd.auk_wiersz(dict(r2, auction_date=bad), 'fiscaldata'), bad)
+            self.assertIsNone(zd.auk_wiersz(dict(self._td(r2), auctionDate=bad + 'T00:00:00'), 'treasurydirect'), bad)
+        get_json, calls = self._get(fd=self._data() + [dict(self._data()[2], auction_date='2026-19-24', cusip='ZLA')])
+        with mock.patch.object(zd, 'get_json', side_effect=get_json):
+            o = zd.build_aukcje(None, now=self.NOW)
+        self.assertEqual((o['api'], o['to'], o['n'], zd.META['errors']), ('fiscaldata', '2026-09-24', 20, []), 'zła data nie zatrzymuje budowy')
+
+    def test_wiersz_z_serwisu_aukcyjnego(self):
+        for i in (2, 3, 4, 5, 6, 8):
+            a, b = zd.auk_wiersz(self._data()[i], 'fiscaldata'), zd.auk_wiersz(self._td(self._data()[i]), 'treasurydirect')
+            self.assertEqual(a, b, f'wiersz {i}: oba źródła dają ten sam kształt')
+        self.assertIsNone(zd.auk_wiersz(self._td(self._data()[0]), 'treasurydirect')); self.assertIsNone(zd.auk_wiersz(self._td(self._data()[9]), 'treasurydirect'))
+
+    def test_mediany(self):
+        rows = [w for w in (zd.auk_wiersz(r, 'fiscaldata') for r in self._data()) if w]
+        med = zd.auk_mediany(rows)
+        self.assertEqual(sorted(med), ['Note 7-Year'], 'tylko papier z ≥ 3 aukcjami w oknie; 2-latki (2 sztuki), 10-latki (2) i reszta — bez mediany')
+        m = med['Note 7-Year']
+        self.assertEqual(m['n'], 13, '12 miesięcznych + 24.09.2026; 24.08.2025 poza oknem 365 dni')
+        self.assertEqual((m['from'], m['to']), ('2025-09-24', '2026-09-24'))
+        vals = sorted([2.30 + 0.01 * i for i in range(1, 13)] + [2.42]); self.assertEqual(m['btc'], round(statistics.median(vals), 2))
+        self.assertAlmostEqual(m['indirect_pct'], round(statistics.median([round((25e9 + i * 1e8) / (25e9 + i * 1e8 + 19e9) * 100, 1) for i in range(1, 13)] + [57.2]), 1))
+        self.assertEqual(zd.auk_mediany([]), {})
+        few = [dict(r, indirect_pct=None) for r in rows if r['k'] == 'Note 7-Year']
+        self.assertIsNone(zd.auk_mediany(few)['Note 7-Year']['indirect_pct'], 'mediana udziału bez liczb = brak, nie 0')
+
+    def _get(self, fd=None, td=None):
+        """Zaślepka get_json: adres danych fiskalnych → fd (lista albo wyjątek); serwis aukcyjny → td[rodzaj] (lista albo wyjątek)."""
+        calls = []
+
+        def get_json(url, headers=None, timeout=30):
+            calls.append(url)
+            if 'fiscaldata' in url:
+                if isinstance(fd, Exception): raise fd
+                return {'data': fd, 'meta': {'count': len(fd)}}
+            if 'treasurydirect' in url:
+                typ = url.split('type=')[1].split('&')[0]
+                v = (td or {}).get(typ, ValueError('nieznany rodzaj ' + typ))
+                if isinstance(v, Exception): raise v
+                return v
+            raise AssertionError('nieoczekiwany adres ' + url)
+        return get_json, calls
+
+    def test_build_z_danych_fiskalnych(self):
+        get_json, calls = self._get(fd=self._data())
+        with mock.patch.object(zd, 'get_json', side_effect=get_json), mock.patch.object(zd, 'NOW', '2026-09-26T12:00:00+00:00'):
+            o = zd.build_aukcje(None, now=self.NOW)
+        self.assertEqual(len(calls), 1); self.assertIn('page[size]=1500', calls[0]); self.assertIn('filter=auction_date:gte:2025-08-22', calls[0]); self.assertIn('fields=auction_date,', calls[0])
+        self.assertEqual((o['at'], o['api'], o['ok']), ('2026-09-26T12:00:00+00:00', 'fiscaldata', {'last': True, 'med12m': True, 'full': True}))
+        self.assertEqual(zd.META['errors'], [])
+        self.assertEqual([(r['date'], r['k']) for r in o['last'][:6]], [('2026-09-24', 'Note 7-Year'), ('2026-09-24', 'Bill 8-Week'), ('2026-09-23', 'FRN 2-Year'), ('2026-09-17', 'TIPS 10-Year'), ('2026-09-09', 'Note 10-Year'), ('2026-09-02', 'Note 2-Year')],
+                         'od najnowszej; ten sam dzień w kolejności źródła; przyszłe, zero i CMB pominięte')
+        self.assertEqual((o['n'], o['from'], o['to'], len(o['last'])), (20, '2025-08-24', '2026-09-24', 20))
+        self.assertEqual(sorted(o['med12m']), ['Note 7-Year']); self.assertTrue(o['src'] and 'domena publiczna' in o['src'])
+        self.assertTrue(any('brak nie jest zerem' in n for n in o['notes']) and any('CMB' in n for n in o['notes']))
+        self.assertTrue(all(r['yield'] is None or r['yield'] > 0 for r in o['last']), 'żadna rentowność nie jest zerem')
+        # więcej niż AUK_LAST aukcji: plik niesie tylko ostatnie 40, mediany z całości; powtórzony CUSIP tego samego dnia liczony raz
+        big = self._data() + [self._fd(f'2026-0{1 + i // 28}-{1 + i % 28:02d}', 'Bill', '4-Week', 2.9, 5e10, 4e9, 3e10, 9e10, hi=4.0, cusip=f'B4-{i}') for i in range(40)]
+        big.append(dict(self._data()[2]))   # duplikat 7-latki z 24.09
+        get_json, calls = self._get(fd=big)
+        with mock.patch.object(zd, 'get_json', side_effect=get_json):
+            o = zd.build_aukcje(None, now=self.NOW)
+        self.assertEqual((len(o['last']), o['n']), (40, 60)); self.assertEqual(o['med12m']['Bill 4-Week']['n'], 40)
+        self.assertEqual(sum(1 for r in o['last'] if r['cusip'] == '91282CRM5'), 1)
+
+    def test_build_zapas_po_awarii_i_awaria_obu(self):
+        td = {t: [self._td(r) for r in self._data()[:10] if isinstance(r, dict) and r.get('auction_date')] for t in zd.AUK_TD_TYPES}
+        get_json, calls = self._get(fd=zd.urllib.error.HTTPError('u', 503, 'Service Unavailable', {}, None), td=td)
+        with mock.patch.object(zd, 'get_json', side_effect=get_json), mock.patch.object(zd, 'NOW', '2026-09-26T12:00:00+00:00'):
+            o = zd.build_aukcje(None, now=self.NOW)
+        self.assertEqual(len(calls), 6, 'jedno zapytanie główne + pięć rodzajów w zapasie'); self.assertTrue(all('startDate=08/22/2025&endDate=10/10/2026' in u for u in calls[1:]))
+        self.assertEqual((o['api'], o['ok']), ('treasurydirect', {'last': True, 'med12m': False, 'full': False}), 'zbudowany z zapasu = część „full” bez zgody (ponowienie po godzinie)')
+        self.assertEqual(len(o['last']), 7, 'każdy rodzaj odpowiada tą samą listą: aukcja liczona raz (CUSIP + dzień)')
+        self.assertEqual(o['last'][0]['k'], 'Note 7-Year'); self.assertEqual(len(zd.META['errors']), 1); self.assertTrue(zd.META['errors'][0].startswith('Aukcje: dane fiskalne: HTTP Error 503'))
+        # zapas częściowy: bony zawodzą — reszta zostaje, nota o braku rodzaju
+        zd.META['errors'].clear()
+        td2 = dict(td, Bill=zd.urllib.error.HTTPError('u', 403, 'Forbidden', {}, None))
+        get_json, calls = self._get(fd=ValueError('odpowiedź bez listy „data”'), td=td2)
+        with mock.patch.object(zd, 'get_json', side_effect=get_json):
+            o = zd.build_aukcje(None, now=self.NOW)
+        self.assertEqual((o['api'], o['ok']['last'], o['ok']['full']), ('treasurydirect', True, False)); self.assertIn('zapas bez rodzajów: Bill', o['notes'])
+        self.assertTrue('serwis aukcyjny Bill: HTTP Error 403' in zd.META['errors'][0] and 'dane fiskalne' in zd.META['errors'][0])
+        # oba zawodzą = wyjątek z oboma powodami (main zostawia poprzedni plik)
+        zd.META['errors'].clear()
+        get_json, calls = self._get(fd=ValueError('brak aukcji z wynikami'), td={t: ValueError('x') for t in zd.AUK_TD_TYPES})
+        with mock.patch.object(zd, 'get_json', side_effect=get_json), self.assertRaises(RuntimeError) as cm:
+            zd.build_aukcje(None, now=self.NOW)
+        self.assertIn('dane fiskalne: brak aukcji z wynikami', str(cm.exception)); self.assertIn('serwis aukcyjny Bill: x', str(cm.exception)); self.assertEqual(zd.META['errors'], [])
+        # limit czasu zapasu: po AUK_BUDGET_S bez kolejnych zapytań
+        get_json, calls = self._get(fd=ValueError('x'), td=td)
+        with mock.patch.object(zd, 'get_json', side_effect=get_json), mock.patch.object(zd.time, 'monotonic', side_effect=[0, 0, 1000, 1000, 1000, 1000, 1000, 1000]):
+            o = zd.build_aukcje(None, now=self.NOW)
+        self.assertEqual(len(calls), 2, 'po przekroczeniu budżetu czasu tylko pierwszy rodzaj'); self.assertIn('zapas bez rodzajów: Note, Bond, TIPS, FRN', o['notes'])
+
+    def test_main_co_6h_ponowienie_i_awaria(self):
+        saved = {}
+        stubs = [mock.patch.object(zd, n, side_effect=RuntimeError('offline')) for n in dir(zd) if n.startswith('build_') and n != 'build_aukcje' and callable(getattr(zd, n))]
+        env = {k: '' for k in ('SOSOVALUE_KEY', 'COINGECKO_KEY', 'FINNHUB_KEY', 'TWELVEDATA_KEY', 'COINMARKETCAP_KEY', 'FRED_KEY', 'EIA_KEY', 'BLS_KEY', 'BEA_KEY', 'SITE_URL', 'CACHE_DIR')}
+        young = {'at': _iso(10), 'ok': {'last': True, 'med12m': True, 'full': True}, 'last': [{'date': '2026-09-24'}]}
+        old = {'at': _iso(7 * 60), 'ok': {'last': True, 'med12m': True, 'full': True}, 'last': [{'date': '2026-09-24'}]}
+        zapas_young = {'at': _iso(10), 'ok': {'last': True, 'med12m': True, 'full': False}, 'last': [{'date': '2026-09-24'}]}
+        zapas_old = {'at': _iso(70), 'ok': {'last': True, 'med12m': True, 'full': False}, 'last': [{'date': '2026-09-24'}]}
+        built = {'at': zd.NOW, 'ok': {'last': True, 'med12m': True, 'full': True}, 'last': [{'date': '2026-09-25'}]}
+        [p.start() for p in stubs]
+        try:
+            def run(prev, build):
+                calls = []
+                with mock.patch.dict(os.environ, env, clear=False), mock.patch.object(zd, 'save', lambda n, o: saved.__setitem__(n, o)), \
+                     mock.patch.object(zd, 'previous', lambda name: prev if name == 'aukcje' else None), \
+                     mock.patch.object(zd, 'build_aukcje', side_effect=(lambda p, now=None: calls.append(p) or build) if not isinstance(build, Exception) else build):
+                    zd.main()
+                return calls
+            self.assertEqual(run(young, AssertionError('nie powinien budować')), []); self.assertIs(saved['aukcje'], young); self.assertEqual(zd.META['ok']['aukcje'], 'cached')
+            self.assertEqual(run(old, built), [old], 'plik sprzed 7 h — budowa (z poprzednim jako wejście)'); self.assertIs(saved['aukcje'], built); self.assertIs(zd.META['ok']['aukcje'], True)
+            self.assertEqual(run(zapas_young, AssertionError('nie powinien budować')), []); self.assertEqual(zd.META['ok']['aukcje'], 'cached', 'zbudowany z zapasu 10 min temu — jeszcze z pamięci')
+            self.assertEqual(run(zapas_old, built), [zapas_old], 'zbudowany z zapasu 70 min temu — ponowna próba źródła głównego')
+            saved.clear()
+            run(old, RuntimeError('offline')); self.assertIs(saved['aukcje'], old, 'awaria budowy — zostaje poprzedni plik'); self.assertIs(zd.META['ok']['aukcje'], False); self.assertIn('Aukcje: offline', zd.META['errors'])
+            saved.clear()
+            run(None, RuntimeError('offline')); self.assertNotIn('aukcje', saved, 'bez poprzedniego pliku i bez danych — nic nie zapisujemy (żadnej pustki)'); self.assertIs(zd.META['ok']['aukcje'], False)
+            run(None, built); self.assertIs(saved['aukcje'], built)
+        finally:
+            [p.stop() for p in stubs]
+        src = open(zd.__file__, encoding='utf-8').read()
+        self.assertIn("prev_au = previous('aukcje')", src); self.assertIn("META['errors'].append(mask(f'Aukcje: {e}')); META['ok']['aukcje'] = False", src)
+        self.assertIn("if prev_au: save('aukcje', prev_au)", src)
+        me = open(__file__, encoding='utf-8').read(); a = me.index('class AukcjeV121(')
+        b = min([i for i in (me.find('\nclass ', a + 1), me.find('\nif __name__', a + 1), me.find('\ndef ', a + 1)) if i > 0] or [len(me)])
+        tups = [m.group(0) for m in _re_v106.finditer(r"\('build_\w+'(?:,\s*'build_\w+')+\)", me[:a] + me[b:]) if "'build_wieloryby'" in m.group(0)]
+        self.assertTrue(len(tups) >= 18 and all("'build_aukcje'" in x for x in tups), 'każda lista zaślepek przebiegu głównego (z build_wieloryby) zna build_aukcje')
+        self.assertEqual((zd.AUK_EVERY, zd.AUK_RETRY, zd.AUK_LAST, zd.AUK_MED_DAYS, zd.AUK_MED_MIN), (360, 60, 40, 365, 3))
+        self.assertNotIn('KEY', src[src.index('def build_aukcje('):src.index('def main():')], 'źródło bez klucza')
+
+    def test_kontrola_i_strona(self):
+        root = os.path.dirname(os.path.abspath(__file__))
+        k = open(os.path.join(root, 'narzedzia', 'kontrola.py'), encoding='utf-8').read()
+        PL = eval(_re_v106.search(r'^PLIKI = (\[.*\])$', k, _re_v106.M).group(1)); LM = eval(_re_v106.search(r'^LIMIT_MIN = (\{[^}]*\})', k, _re_v106.M).group(1))
+        self.assertIn('aukcje', PL); self.assertEqual(LM['aukcje'], 24 * 60, 'plik co 6 h: dzień bez nowego pliku = uwaga w kontroli')
+        h = open(os.path.join(root, 'index.html'), encoding='utf-8').read()
+        self.assertEqual(h.count('<section class="panel pcard" id="g-aukcje" hidden></section>'), 1); self.assertIn("srvJSON('aukcje')", h); self.assertIn('const EXTRA114=', h)
+        wf = open(os.path.join(root, '.github', 'workflows', 'strona.yml'), encoding='utf-8').read()
+        self.assertNotIn('AUKCJE', wf, 'żadnego sekretu — źródło publiczne')

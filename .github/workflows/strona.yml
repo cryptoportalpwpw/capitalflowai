@@ -38,6 +38,7 @@ jobs:
           restore-keys: dane-
       - name: Zbierz dane (klucze tylko z Secrets)
         env:
+          SEC_CONTACT: ${{ secrets.SEC_CONTACT }}             # v121: insiderzy — adres e-mail do nagłówka zapytań EDGAR (wymóg urzędu); nigdy w plikach strony
           SOSOVALUE_KEY: ${{ secrets.SOSOVALUE_KEY }}
           COINGECKO_KEY: ${{ secrets.COINGECKO_KEY }}
           FINNHUB_KEY: ${{ secrets.FINNHUB_KEY }}
@@ -85,6 +86,7 @@ jobs:
           ls -la _site _site/data
       - name: Straż kluczy — wartość żadnego sekretu nie może być w plikach strony (znalezisko = publikacja przerwana)
         env:
+          SEC_CONTACT: ${{ secrets.SEC_CONTACT }}
           SOSOVALUE_KEY: ${{ secrets.SOSOVALUE_KEY }}
           COINGECKO_KEY: ${{ secrets.COINGECKO_KEY }}
           FINNHUB_KEY: ${{ secrets.FINNHUB_KEY }}

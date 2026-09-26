@@ -6824,6 +6824,792 @@ def build_ceny_krypto(prev=None, only=None, today=None):
     return out
 
 
+# ===================== v121: INSIDERZY SPÓŁEK USA — zgłoszenia Form 4 (SEC EDGAR, bez klucza) =====================
+# Źródło z pierwszej ręki: indeks dzienny EDGAR według typu formularza (form.YYYYMMDD.idx) i pełne dokumenty zgłoszeń
+# (…/Archives/edgar/data/CIK/ACCESSION.txt — w środku blok <XML> ownershipDocument).
+# Licencja: informacja publiczna SEC — wolno kopiować i rozpowszechniać bez zgody urzędu; SEC prosi o wskazanie źródła
+# (https://www.sec.gov/privacy#dissemination, „Website Dissemination”, sprawdzone 26.09.2026). Zgłoszenia piszą sami zgłaszający,
+# więc to nie są utwory rządu USA. Źródło wskazane w polu „src” pliku data/insider.json; panel mówi „zgłoszenia do nadzoru
+# giełdowego USA”, strona Źródła ma ogólne zdanie o legalnych źródłach publicznych (osobna linia podziękowań nie jest wymagana).
+# Zasady dostępu (https://www.sec.gov/os/accessing-edgar-data): najwyżej 10 zapytań/s (tu ≤ 8), User-Agent z nazwą programu i adresem
+# kontaktowym (bez adresu e-mail urząd odpowiada 403 „Undeclared Automated Tool” — sprawdzone 26.09.2026), pobierać tylko to, co potrzebne —
+# jeden dzień zgłoszeń, raz, po jego zamknięciu. Adres kontaktowy WYŁĄCZNIE z sekretu SEC_CONTACT (nigdy w kodzie, testach ani plikach strony;
+# maskowany w komunikatach, pilnowany przez straż kluczy); bez sekretu część jest wyłączona z notatką.
+# Odpowiedzi 403 urzędu mają dwa znaczenia: brak pliku (weekend, święto; treść magazynu „<Code>AccessDenied</Code>”) albo blokada
+# (strona „Undeclared Automated Tool” / „Request Rate Threshold Exceeded” — zły User-Agent albo przekroczony limit). Rozróżnia je _ins_err.
+INS_IDX_URL = 'https://www.sec.gov/Archives/edgar/daily-index/{y}/QTR{q}/form.{d}.idx'
+INS_DOC_URL = 'https://www.sec.gov/Archives/{f}'
+INS_UA = 'CapitalFlowAI/1.0 ({})'   # wymagany przez SEC: nazwa programu i kontakt — kontakt z sekretu SEC_CONTACT (ins_ua)
+INS_TEMPO = 0.125       # s między zapytaniami — najwyżej 8 na sekundę
+INS_BUDGET = 120        # s na przebieg (dzień w toku dokańczany w następnych przebiegach)
+INS_BUDGET_LATE = 40    # s, gdy przebieg zbieracza trwa już dłużej niż INS_LATE (cały przebieg ma limit 15 min)
+INS_LATE = 480
+INS_MAX = 700           # najwyżej tyle zgłoszeń Form 4 na dzień (więcej = notatka, liczone pierwsze INS_MAX)
+INS_HIST = 120          # dni w historii
+INS_TOP = 10            # największe spółki dnia
+INS_READY_H = 4         # dzień D gotowy od D+1 04:00 UTC: Form 4 przyjmowane do 22:00 ET tego dnia (02:00/03:00 UTC), indeks odświeżony ok. 02:16 UTC (sprawdzone 26.09.2026)
+INS_BACK_DAYS = 30      # pierwszy przebieg: tyle dni wstecz (jeden dzień na przebieg, weekendy nic nie kosztują); potem: najdłuższa zaległość po przerwie zbieracza
+INS_SKIP_KEEP = 60      # tyle dni bez indeksu (weekendy, święta) pamiętamy — bez ponownych zapytań
+INS_BLEDY = 3           # tyle kolejnych błędów sieci/serwera = koniec części na ten przebieg (reszta zostaje w kolejce)
+INS_PROBY = 3           # tyle przebiegów z błędem sieci/serwera dla jednego zgłoszenia = zgłoszenie pominięte (n_fail, notatka) — dzień nie utknie
+INS_TIMEOUT = 15
+INS_SRC = ('Zgłoszenia insiderów Form 4 do amerykańskiego nadzoru giełdowego (SEC EDGAR: indeks dzienny i dokumenty zgłoszeń) — odczyt własny; '
+           'liczone tylko transakcje na rynku: kod P (zakup) i S (sprzedaż), akcje × cena ze zgłoszenia; dzień = data zgłoszenia; każde zgłoszenie raz; '
+           'informacja publiczna SEC — wolno kopiować i rozpowszechniać bez zgody (sec.gov/privacy#dissemination); SEC prosi o wskazanie źródła')
+_INS_ROW = re.compile(r'^4\s{2,}(.*?)\s{2,}(\d+)\s+(\d{8})\s+(edgar/data/\S+\.txt)\s*$')
+_INS_TICK = re.compile(r'^[A-Z][A-Z0-9.\-]{0,9}$')
+_INS_DAY = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+_INS_MAIL = re.compile(r'^[^\s@()<>,;"]+@[^\s@()<>,;"]+\.[^\s@()<>,;"]+$')   # adres kontaktowy do User-Agent (tylko e-mail — tego wymaga urząd)
+_INS_LAST = [0.0]       # czas ostatniego zapytania (monotonic) — odstęp INS_TEMPO
+
+
+def ins_ua(contact):
+    """User-Agent dla EDGAR: nazwa programu i adres kontaktowy z sekretu SEC_CONTACT; pusty albo nie-e-mail = None (część wyłączona)."""
+    c = (contact or '').strip()
+    return INS_UA.format(c) if len(c) <= 120 and _INS_MAIL.match(c) else None
+
+
+def ins_target(now):
+    """Dzień zgłoszeń gotowy do odczytu: D od D+1 INS_READY_H:00 UTC (Form 4 przyjmowane do 22:00 ET tego samego dnia)."""
+    return (now - datetime.timedelta(hours=INS_READY_H)).date() - datetime.timedelta(days=1)
+
+
+def ins_idx_url(day):
+    return INS_IDX_URL.format(y=day.year, q=(day.month - 1) // 3 + 1, d=day.strftime('%Y%m%d'))
+
+
+def ins_index_ok(text):
+    """Odpowiedź 200 to naprawdę indeks dzienny (nagłówek kolumn), a nie strona błędu — inaczej dzień nie może przepaść jako „pusty”."""
+    head = (text or '')[:4000]
+    return 'Form Type' in head and 'File Name' in head
+
+
+def ins_parse_index(text):
+    """Indeks dzienny wg typu formularza (stała szerokość kolumn): wiersze typu dokładnie „4” (bez 4/A) → [[cik, nazwa, plik], …].
+    Każde zgłoszenie raz: indeks wymienia to samo zgłoszenie (numer ACCESSION) pod CIK spółki i pod CIK każdej osoby zgłaszającej
+    (25.09.2026: 666 wierszy, 322 zgłoszenia; jedno nawet 8 razy) — liczy się numer zgłoszenia, nie ścieżka (każda ścieżka daje ten sam dokument)."""
+    out, seen = [], set()
+    for line in text.splitlines():
+        m = _INS_ROW.match(line)
+        if not m:
+            continue
+        f = m.group(4); acc = f.rsplit('/', 1)[-1]
+        if acc in seen:
+            continue
+        seen.add(acc); out.append([m.group(2), m.group(1).strip(), f])
+    return out
+
+
+def _ins_num(s):
+    try:
+        v = float(str(s).strip().replace(',', ''))
+    except (TypeError, ValueError):
+        return None
+    return v if v == v and 0 < v < float('inf') else None
+
+
+def _ins_val(node, path):
+    """Tekst elementu pod ścieżką (brak elementu albo pusty tekst = None)."""
+    el = node.find(path) if node is not None else None
+    return ((el.text or '').strip() or None) if el is not None else None
+
+
+def ins_parse_doc(text):
+    """Dokument zgłoszenia (.txt z blokiem <XML> ownershipDocument) → {issuer, ticker, buy, sell, n_buy, n_sell}: sumy USD transakcji
+    na rynku z tabeli akcji (nonDerivative): kod P + nabycie A = zakup, kod S + zbycie D = sprzedaż; akcje × cena; wiersz bez ceny
+    albo liczby jest pomijany (nigdy zero); n_buy/n_sell = liczba takich wierszy w dokumencie."""
+    import xml.etree.ElementTree as ET
+    root = None
+    for m in re.finditer(r'<XML>(.*?)</XML>', text, re.S | re.I):
+        body = m.group(1).strip()
+        if '<ownershipDocument' not in body:
+            continue
+        try:
+            r = ET.fromstring(body)
+        except ET.ParseError as e:
+            raise ValueError(f'XML: {e}')
+        if r.tag == 'ownershipDocument':
+            root = r; break
+    if root is None:
+        raise ValueError('brak dokumentu ownershipDocument')
+    tick = (_ins_val(root, 'issuer/issuerTradingSymbol') or '').upper().replace(' ', '')
+    o = {'issuer': _ins_val(root, 'issuer/issuerName'), 'ticker': tick if _INS_TICK.match(tick) and tick not in ('NONE', 'N/A', 'NA') else None,
+         'buy': 0.0, 'sell': 0.0, 'n_buy': 0, 'n_sell': 0}
+    for tr in root.findall('nonDerivativeTable/nonDerivativeTransaction'):
+        code = (_ins_val(tr, 'transactionCoding/transactionCode') or '').upper()
+        ad = (_ins_val(tr, 'transactionAmounts/transactionAcquiredDisposedCode/value') or '').upper()
+        sh = _ins_num(_ins_val(tr, 'transactionAmounts/transactionShares/value'))
+        px = _ins_num(_ins_val(tr, 'transactionAmounts/transactionPricePerShare/value'))
+        if sh is None or px is None:
+            continue
+        if code == 'P' and ad == 'A':
+            o['buy'] += sh * px; o['n_buy'] += 1
+        elif code == 'S' and ad == 'D':
+            o['sell'] += sh * px; o['n_sell'] += 1
+    return o
+
+
+def ins_top(iss, key):
+    """Największe sumy dnia wg spółki: [[spółka, ticker, USD], …] (INS_TOP, malejąco), tylko > 0; key: 2 = zakupy, 3 = sprzedaż."""
+    rows = [[v[0], v[1], round(v[key], 2)] for v in iss.values()
+            if isinstance(v, list) and len(v) >= 4 and isinstance(v[key], (int, float)) and v[key] > 0]
+    rows.sort(key=lambda r: (-r[2], str(r[0])))
+    return rows[:INS_TOP]
+
+
+def ins_hist(prev_hist, row, keep=INS_HIST):
+    """Historia dzienna [[dzień, zakupy USD, sprzedaż USD, zgłoszeń z zakupem, ze sprzedażą], …]: wiersz tego dnia zastępowany, ostatnie `keep` dni."""
+    by = {}
+    for r in (prev_hist if isinstance(prev_hist, list) else []):
+        if isinstance(r, list) and len(r) >= 5 and isinstance(r[0], str) and _INS_DAY.match(r[0]):
+            by[r[0]] = r[:5]
+    by[row[0]] = row
+    return [by[d] for d in sorted(by)][-keep:]
+
+
+def _ins_get(url, ua):
+    """Jedno zapytanie do EDGAR: nagłówek User-Agent z kontaktem i odstęp ≥ INS_TEMPO od poprzedniego zapytania."""
+    wait = _INS_LAST[0] + INS_TEMPO - time.monotonic()
+    if wait > 0:
+        time.sleep(wait)
+    try:
+        return get(url, headers={'User-Agent': ua, 'Accept': 'text/plain, */*'}, timeout=INS_TIMEOUT)
+    finally:
+        _INS_LAST[0] = time.monotonic()
+
+
+def _ins_err(e):
+    """Rodzaj błędu zapytania do EDGAR → (rodzaj, opis): 'brak' — pliku nie ma (404/410 albo 403 z treścią magazynu AccessDenied/NoSuchKey:
+    tak urząd odpowiada na dzień bez indeksu); 'blok' — urząd odmawia (403 z inną treścią, np. „Undeclared Automated Tool”, „Request Rate
+    Threshold Exceeded”: zły User-Agent albo przekroczony limit; 429) — dalsze zapytania w tym przebiegu tylko pogorszą sprawę;
+    'siec' — reszta (5xx, przekroczony czas, DNS…). Nieznana treść 403 = blokada, nigdy „brak pliku” (dzień handlu nie może zniknąć po cichu)."""
+    if not isinstance(e, urllib.error.HTTPError):
+        return 'siec', mask(str(e))
+    try:
+        if e.code in (404, 410):
+            return 'brak', f'HTTP {e.code}'
+        if e.code == 403:
+            try:
+                body = (e.read(4000) or b'').decode('utf-8', 'replace')
+            except Exception:  # noqa — treść nieczytelna = nieznana
+                body = ''
+            if 'AccessDenied' in body or 'NoSuchKey' in body:
+                return 'brak', 'HTTP 403 (brak pliku)'
+            why = ('Undeclared Automated Tool' in body and 'nieznany program: User-Agent bez kontaktu') or \
+                  ('Rate Threshold' in body and 'przekroczony limit zapytań') or 'odmowa dostępu'
+            return 'blok', f'HTTP 403 ({why})'
+        if e.code == 429:
+            return 'blok', 'HTTP 429 (przekroczony limit zapytań)'
+        return 'siec', f'HTTP {e.code}'
+    finally:
+        try:
+            e.close()   # odpowiedź z błędem trzyma połączenie — zamykamy od razu
+        except Exception:  # noqa
+            pass
+
+
+def _ins_final(out):
+    """Sumy, stosunek, udział, największe spółki i wiersz historii z bieżącego stanu dnia (żadnego odczytanego zgłoszenia = None, nie zero)."""
+    iss = out.get('iss') if isinstance(out.get('iss'), dict) else {}
+    read = isinstance(out.get('n_parsed'), int) and out['n_parsed'] > 0
+    b = round(float(out.get('buys_usd') or 0.0), 2) if read else None
+    s = round(float(out.get('sells_usd') or 0.0), 2) if read else None
+    out['buys_usd'], out['sells_usd'] = b, s
+    # liczby zgłoszeń z zakupem/sprzedażą: tylko gdy coś odczytano (inaczej „0 zgłoszeń” pod „—” udawałoby wiedzę)
+    nb, ns = (int(out.get('n_buy') or 0), int(out.get('n_sell') or 0)) if read else (None, None)
+    out['n_buy'], out['n_sell'] = nb, ns
+    out['ratio'] = round(b / s, 3) if read and s > 0 else None
+    out['share'] = round(100.0 * b / (b + s), 1) if read and (b + s) > 0 else None
+    out['top_buys'], out['top_sells'] = ins_top(iss, 2), ins_top(iss, 3)
+    out['hist'] = ins_hist(out.get('hist'), [out['day'], b, s, nb, ns])
+    if isinstance(out.get('n_filings'), int) and isinstance(out.get('n_queued'), int) and out['n_filings'] > out['n_queued']:
+        out['notes'].append(f"{out['day']}: {out['n_filings']} zgłoszeń Form 4 — policzono pierwsze {out['n_queued']}")
+
+
+def build_insider(prev=None, now=None, budget=None, contact=None):
+    """data/insider.json — dzienna suma zakupów i sprzedaży insiderów spółek USA na rynku (Form 4). Dzień zgłoszeń D czytany raz,
+    od D+1 04:00 UTC: indeks dzienny → dokumenty zgłoszeń typu „4” (każde zgłoszenie raz, ≤ INS_MAX, ≤ 8 zapytań/s, budżet czasu na przebieg;
+    reszta dnia zostaje w kolejce na następny przebieg). Brak indeksu (weekend, święto) = dzień zapamiętany jako pusty, nie błąd — ale
+    ostatni gotowy dzień bez indeksu jest sprawdzany znowu (indeks może się spóźnić), a blokada urzędu to błąd, nigdy „dzień pusty”.
+    contact = adres z sekretu SEC_CONTACT (User-Agent; bez niego wyjątek). Wynik: sumy USD, liczba zgłoszeń z zakupem/sprzedażą, stosunek
+    i udział zakupów, największe spółki dnia, historia INS_HIST dni; brak liczby = None, nigdy zero. Źródło i licencja: nagłówek tej części."""
+    ua = ins_ua(contact)
+    if not ua:
+        raise RuntimeError('brak adresu kontaktowego do nagłówka User-Agent (sekret SEC_CONTACT)')
+    now = now or _now_utc(); t0 = time.monotonic()
+    if budget is None:
+        late = _RUN_T0[0] is not None and time.monotonic() - _RUN_T0[0] > INS_LATE
+        budget = INS_BUDGET_LATE if late else INS_BUDGET
+    prev = prev if isinstance(prev, dict) else {}
+    keep = ('day', 'done', 'day_at', 'done_at', 'n_filings', 'n_queued', 'n_parsed', 'n_fail', 'buys_usd', 'sells_usd', 'n_buy', 'n_sell',
+            'ratio', 'share', 'top_buys', 'top_sells', 'checked', 'pending', 'iss', 'tries')
+    out = {'at': NOW, 'src': INS_SRC, 'ok': {'sec': True}, 'max': INS_MAX, 'notes': []}
+    out.update({k: prev[k] for k in keep if k in prev})
+    out['hist'] = [r for r in (prev.get('hist') or []) if isinstance(r, list)]
+    out['skipped'] = [d for d in (prev.get('skipped') or []) if isinstance(d, str) and _INS_DAY.match(d)][-INS_SKIP_KEEP:]
+    errs, n_req, exhausted = [], 0, False
+    T = ins_target(now)
+
+    def over():   # budżet czasu: najmniej jedno zapytanie na przebieg (postęp zawsze), potem twarda granica
+        return bool(n_req) and time.monotonic() - t0 > budget
+
+    day = out['day'] if isinstance(out.get('day'), str) and _INS_DAY.match(out['day']) else None
+    queue = [f for f in (out.get('pending') or []) if isinstance(f, str)] if (day and out.get('done') is False) else []
+    if day and not queue and out.get('done') is False:   # stan bez kolejki, a dzień nieskończony — domykamy go z tego, co jest
+        out['done'] = True; out['done_at'] = NOW; _ins_final(out)
+        for k in ('iss', 'pending', 'tries'):
+            out.pop(k, None)
+    while True:
+        if not queue:
+            # nowy dzień: od najstarszego brakującego (po przerwie zbieracza) do T; pierwszy przebieg — INS_BACK_DAYS dni wstecz
+            checked = out['checked'] if isinstance(out.get('checked'), str) and _INS_DAY.match(out['checked']) else None
+            if (checked and checked >= T.isoformat()) or over():
+                break
+            first = T - datetime.timedelta(days=INS_BACK_DAYS - 1)
+            if day:
+                first = max(first, datetime.date.fromisoformat(day) + datetime.timedelta(days=1))
+            if checked:
+                first = max(first, datetime.date.fromisoformat(checked) + datetime.timedelta(days=1))
+            found, rows, d, wait_t = None, [], first, False
+            while d <= T:
+                if d.isoformat() in out['skipped']:
+                    d += datetime.timedelta(days=1); continue
+                if over():
+                    exhausted = True; break
+                try:
+                    st, text = _ins_get(ins_idx_url(d), ua); n_req += 1
+                except Exception as e:  # noqa — rodzaj błędu decyduje: brak pliku / blokada / sieć
+                    n_req += 1
+                    kind, msg = _ins_err(e)
+                    if kind == 'brak' and d < T:   # dzień bez indeksu (weekend, święto) — zapamiętany, bez ponownych zapytań
+                        out['skipped'] = (out['skipped'] + [d.isoformat()])[-INS_SKIP_KEEP:]; out['checked'] = d.isoformat()
+                        d += datetime.timedelta(days=1); continue
+                    if kind == 'brak':   # ostatni gotowy dzień bez indeksu: może się spóźnić — `checked` bez zmian, ponownie w następnym przebiegu
+                        wait_t = True; break
+                    errs.append(f'indeks {d.isoformat()}: {msg}'); out['ok']['sec'] = False; exhausted = True; break   # stan bez zmian — dzień ponownie
+                if not ins_index_ok(text):
+                    errs.append(f'indeks {d.isoformat()}: odpowiedź bez nagłówka indeksu'); out['ok']['sec'] = False; exhausted = True; break
+                rows = ins_parse_index(text); found = d; break
+            if found is None:
+                if not exhausted and not errs and not wait_t:
+                    out['checked'] = T.isoformat()   # wszystko do T sprawdzone — do następnego dnia bez zapytań
+                break
+            day = found.isoformat(); queue = [r[2] for r in rows[:INS_MAX]]
+            out.update({'day': day, 'done': False, 'day_at': NOW, 'n_filings': len(rows), 'n_queued': len(queue), 'n_parsed': 0, 'n_fail': 0,
+                        'n_buy': 0, 'n_sell': 0, 'buys_usd': 0.0, 'sells_usd': 0.0, 'iss': {}, 'tries': {}, 'checked': day})
+            out.pop('done_at', None)
+            if not rows:
+                out['notes'].append(f'{day}: indeks bez zgłoszeń Form 4')
+        # dokumenty zgłoszeń dnia: ≤ 8 zapytań/s, do wyczerpania budżetu czasu. Brak dokumentu (404/410, 403 AccessDenied) = pominięte;
+        # blokada urzędu = koniec przebiegu, zgłoszenie zostaje; błąd sieci/serwera = zgłoszenie na koniec kolejki (najwyżej jedna próba
+        # na przebieg), po INS_PROBY takich przebiegach pominięte; INS_BLEDY błędów z rzędu = koniec przebiegu
+        tries = {k: v for k, v in out['tries'].items() if isinstance(k, str) and isinstance(v, int)} if isinstance(out.get('tries'), dict) else {}
+        hit, streak = set(), 0
+        while queue:
+            if over():
+                exhausted = True; break
+            f = queue[0]; acc = f.rsplit('/', 1)[-1]
+            if acc in hit:   # to zgłoszenie zawiodło już w tym przebiegu — ponowna próba w następnym
+                break
+            try:
+                st, text = _ins_get(INS_DOC_URL.format(f=f), ua); n_req += 1
+            except Exception as e:  # noqa — rodzaj błędu decyduje o losie zgłoszenia
+                n_req += 1
+                kind, msg = _ins_err(e)
+                if kind == 'brak':   # zgłoszenie bez dokumentu — pominięte (liczone w n_fail)
+                    out['n_fail'] += 1; queue.pop(0); tries.pop(acc, None); streak = 0; continue
+                if kind == 'blok':
+                    errs.append(f'zgłoszenie {acc}: {msg}'); out['ok']['sec'] = False; exhausted = True; break
+                streak += 1; hit.add(acc); tries[acc] = tries.get(acc, 0) + 1; queue.append(queue.pop(0))
+                if tries[acc] >= INS_PROBY:
+                    queue.pop(); tries.pop(acc, None); out['n_fail'] += 1
+                    note = f'{day}: zgłoszenie {acc} pominięte po {INS_PROBY} przebiegach z błędem ({msg})'
+                    out['notes'].append(note); META['notes'].append('Insiderzy: ' + note)
+                if streak >= INS_BLEDY:
+                    errs.append(f'zgłoszenie {acc}: {msg}'); out['ok']['sec'] = False; exhausted = True; break
+                continue
+            streak = 0; queue.pop(0); tries.pop(acc, None)
+            try:
+                d = ins_parse_doc(text)
+            except ValueError as e:
+                out['n_fail'] += 1
+                if out['n_fail'] <= 3:
+                    out['notes'].append(f'{acc}: {e}')
+                continue
+            out['n_parsed'] += 1
+            if d['buy'] or d['sell']:
+                key = d['issuer'] or d['ticker'] or f.split('/')[2]
+                rec = out['iss'].get(key) if isinstance(out['iss'].get(key), list) else [d['issuer'] or key, d['ticker'], 0.0, 0.0]
+                rec[2] += d['buy']; rec[3] += d['sell']
+                if not rec[1] and d['ticker']:
+                    rec[1] = d['ticker']
+                out['iss'][key] = rec
+                out['buys_usd'] = (out.get('buys_usd') or 0.0) + d['buy']; out['sells_usd'] = (out.get('sells_usd') or 0.0) + d['sell']
+                out['n_buy'] = (out.get('n_buy') or 0) + (1 if d['n_buy'] else 0); out['n_sell'] = (out.get('n_sell') or 0) + (1 if d['n_sell'] else 0)
+        if day and out.get('done') is False:
+            out['pending'] = queue; out['tries'] = tries
+            out['done'] = not queue
+            _ins_final(out)
+            if out['done']:
+                out['done_at'] = NOW
+                for k in ('iss', 'pending', 'tries'):
+                    out.pop(k, None)
+            else:
+                note = f"{day}: dzień w toku — odczytano {out['n_parsed']} z {out['n_queued']} zgłoszeń, reszta w następnym przebiegu"
+                out['notes'].append(note); META['notes'].append('Insiderzy: ' + note)
+        if queue or exhausted:
+            break
+    if errs:
+        META['errors'].append(mask('Insiderzy: ' + '; '.join(errs)[:300]))
+        if not day:
+            raise RuntimeError(errs[0])
+    for n in out['notes']:
+        if 'policzono pierwsze' in n:
+            META['notes'].append('Insiderzy: ' + n)
+    return out
+
+
+# --- v121: stres finansowy USA i nastroje na opcjach (bez klucza; obszar stres-opcje) ---
+# Indeks stresu: dzienny plik CSV urzędu badawczego przy Skarbie USA (OFR Financial Stress Index — dane rządu USA, domena publiczna, bez warunków użycia;
+# publikowany z danymi sprzed 2 dni roboczych — plik z 25.09 kończy się na 23.09; wartość za KAŻDY dzień roboczy, także w święta giełdowe USA
+# (25.12, 3.07, 7.09 są w pliku), więc „dni robocze”, nie „sesje”; kolumny: OFR FSI, Credit, Equity valuation, Safe assets, Funding, Volatility,
+# United States, Other advanced economies, Emerging markets). Put/call: dzienny plik JSON JEDNEJ giełdy opcji (Cboe, cdn.cboe.com/…/daily/
+# RRRR-MM-DD_daily_options; dzień bez pliku = HTTP 403 z treścią XML magazynu plików <Code>AccessDenied</Code>, sprawdzone 26.09.2026; serwer stoi
+# za siecią CDN, której blokada też daje 403, ale z inną treścią — to błąd, nie dzień bez sesji: pc_brak_pliku) — warunki giełdy
+# („Use of Content”) wymagają wcześniejszej zgody i podpisanej umowy licencyjnej na KAŻDE użycie danych,
+# także na bezpłatnym, publicznym panelu z podpisem → część pc włączana dopiero zgodą właściciela wpisaną do CBOE_ZGODA (patrz build_stres).
+FSI_URL = 'https://www.financialresearch.gov/financial-stress-index/data/fsi.csv'
+FSI_DNI = 400        # dni robocze w pliku (≈ 19 miesięcy): tekst „najniżej / najwyżej z 60 dni roboczych” z zapasem na dłuższe okna
+FSI_TIMEOUT = 40     # s — plik ma ok. 0,5 MB (od 2000 r.)
+FSI_KOL = (('OFR FSI', 'value'), ('Credit', 'credit'), ('Equity valuation', 'equity'), ('Safe assets', 'safe'), ('Funding', 'funding'),
+           ('Volatility', 'vol'), ('United States', 'us'), ('Other advanced economies', 'ae'), ('Emerging markets', 'em'))
+PC_URL = 'https://cdn.cboe.com/data/us/options/market_statistics/daily/{d}_daily_options'
+PC_DNI = 300         # sesji w pliku
+PC_PER_RUN = 10      # najwyżej tyle dni (zapytań) na przebieg — historia dopełniana stopniowo, najnowsze dni najpierw
+PC_TEMPO = 0.3       # s między zapytaniami
+PC_TIMEOUT = 15
+PC_USTALONY = 2      # dni: brak pliku (403/404 z XML magazynu plików — pc_brak_pliku) dla dnia starszego niż tyle dni = dzień bez sesji (zapamiętany, nie pytamy ponownie); młodszy — plik może dopiero powstać
+PC_NAZWY = {'TOTAL PUT/CALL RATIO': 'total', 'EQUITY PUT/CALL RATIO': 'equity', 'INDEX PUT/CALL RATIO': 'index'}
+PC_ZGODA = os.environ.get('CBOE_ZGODA', '').strip()   # pisemna zgoda giełdy (treść dowolna, np. data i numer umowy); pusta = część put/call wyłączona
+STRES_EVERY = 6 * 60   # min — oba źródła są dzienne; co 6 h wystarczy
+STRES_RETRY = 60       # min — część z błędem ponawiana po godzinie
+
+
+def fsi_parse(text, dni=None):
+    """CSV indeksu stresu (Date, OFR FSI, składowe, regiony) → {'date', 'value', 'd1', 'd5', 'hist': [[dzień, wartość], …], 'cols': {klucz: {'v', 'd1'}}}.
+    Ostatnie `dni` dni z liczbą w kolumnie głównej (dzień bez liczby wypada — brak nie jest zerem); zmiany: d1 = wobec poprzedniego dnia z serii,
+    d5 = wobec 5 dni serii wcześniej (dni robocze — indeks ma wartość za każdy dzień roboczy, także w święta giełdowe USA; nie kalendarz);
+    składowe: ostatnia wartość i zmiana dzienna, brak → None. Zła treść = wyjątek."""
+    dni = FSI_DNI if dni is None else dni
+    rd = csv.reader(io.StringIO(str(text or '').lstrip('﻿')))
+    try:
+        head = [h.strip() for h in next(rd)]
+    except StopIteration:
+        raise ValueError('pusty plik')
+    if 'Date' not in head or 'OFR FSI' not in head:
+        raise ValueError('nieznany nagłówek: ' + ', '.join(head[:4])[:80])
+    idx = {k: head.index(n) for n, k in FSI_KOL if n in head}
+    di = head.index('Date')
+    rows = {}
+    for r in rd:
+        d = r[di].strip() if len(r) > di else ''
+        if not re.match(r'^\d{4}-\d{2}-\d{2}$', d):
+            continue
+        rec = {}
+        for k, i in idx.items():
+            try:
+                v = float(r[i]); rec[k] = v if v == v and abs(v) != float('inf') else None
+            except (IndexError, ValueError, TypeError):
+                rec[k] = None
+        if rec.get('value') is None:
+            continue
+        rows[d] = rec
+    if not rows:
+        raise ValueError('brak wierszy z liczbą')
+    days = sorted(rows)[-dni:]
+    last = rows[days[-1]]
+
+    def diff(k, n):   # zmiana wobec n-tego dnia serii wstecz — tylko z dwóch liczb
+        if len(days) <= n:
+            return None
+        a, b = last.get(k), rows[days[-1 - n]].get(k)
+        return round(a - b, 3) if a is not None and b is not None else None
+    cols = {k: {'v': last.get(k), 'd1': diff(k, 1)} for _, k in FSI_KOL if k != 'value' and k in idx}
+    return {'date': days[-1], 'value': last['value'], 'd1': diff('value', 1), 'd5': diff('value', 5), 'hist': [[d, rows[d]['value']] for d in days], 'cols': cols}
+
+
+def pc_parse(j):
+    """JSON dnia (ratios[]: name, value) → {'total', 'equity', 'index'}: liczba > 0 albo None („0.00” = brak obrotu, nie wskaźnik); bez listy = wyjątek."""
+    R = j.get('ratios') if isinstance(j, dict) else None
+    if not isinstance(R, list):
+        raise ValueError('brak listy ratios')
+    out = {k: None for k in PC_NAZWY.values()}
+    for r in R:
+        k = PC_NAZWY.get(str(r.get('name', '')).strip().upper()) if isinstance(r, dict) else None
+        if not k:
+            continue
+        try:
+            v = float(str(r.get('value')).replace(',', '.'))
+        except (TypeError, ValueError):
+            continue
+        if v > 0 and v == v and v != float('inf'):
+            out[k] = round(v, 4)
+    if all(v is None for v in out.values()):
+        raise ValueError('brak wskaźników w ratios')
+    return out
+
+
+def pc_prog(today, dni=None):
+    """Najstarszy dzień kalendarzowy okna put/call: dni sesji × 1,5 + 10 (weekendy i święta) — dalej nie pytamy."""
+    return today - datetime.timedelta(days=int((PC_DNI if dni is None else dni) * 1.5) + 10)
+
+
+def pc_dni(maja, brak, today, n=None, dni=None):
+    """Dni do pobrania w tym przebiegu: od dziś wstecz, tylko dni robocze, bez dni już w historii (maja) i dni bez sesji (brak); najwyżej n.
+    Pełna historia (≥ dni wierszy) nie sięga dalej niż jej najstarszy dzień — bez pytań o dni, które i tak wypadłyby z okna."""
+    n = PC_PER_RUN if n is None else n
+    dni = PC_DNI if dni is None else dni
+    floor = pc_prog(today, dni)
+    if len(maja) >= dni:
+        floor = max(floor, datetime.date.fromisoformat(min(maja)))
+    out, d = [], today
+    while d >= floor and len(out) < n:
+        s = d.isoformat()
+        if d.weekday() < 5 and s not in maja and s not in brak:
+            out.append(d)
+        d -= datetime.timedelta(days=1)
+    return out
+
+
+def pc_brak_pliku(e):
+    """Czy odpowiedź 403/404 to naprawdę „pliku dla tego dnia nie ma”: tylko XML magazynu plików giełdy z <Code>AccessDenied</Code> albo
+    <Code>NoSuchKey</Code> (tak odpowiada dzień bez sesji — sprawdzone 26.09.2026). Każda inna treść (strona blokady sieci CDN przed serwerem,
+    pusta odpowiedź, błąd odczytu) = False — wtedy to błąd, a dzień NIE jest zapisywany jako dzień bez sesji."""
+    try:
+        b = e.read(4096)
+    except Exception:  # noqa
+        return False
+    finally:
+        try:
+            e.close()   # odpowiedź przeczytana — zwalniamy połączenie
+        except Exception:  # noqa
+            pass
+    b = b.decode('utf-8', 'replace') if isinstance(b, (bytes, bytearray)) else str(b or '')
+    return bool(re.search(r'<Code>\s*(?:AccessDenied|NoSuchKey)\s*</Code>', b))
+
+
+def pc_czesc(prev, now=None, errors=None, sleep=None):
+    """Część put/call: historia z poprzedniego pliku + do PC_PER_RUN nowych dni (najnowsze najpierw, potem zaległe wstecz do PC_DNI sesji).
+    Dzień bez pliku (403/404 z XML magazynu plików — pc_brak_pliku): starszy niż PC_USTALONY dni = dzień bez sesji (zapamiętany w 'brak'),
+    młodszy = plik może jeszcze nie istnieć (spróbujemy w następnym przebiegu). 403/404 z inną treścią (np. blokada sieci CDN wobec serwera
+    automatu) i każdy inny błąd = błąd i koniec części w tym przebiegu (co jest — zostaje; żaden dzień nie trafia wtedy do 'brak').
+    Zwraca (część, liczba pobranych dni)."""
+    now = now or _now_utc()
+    today = now.date()
+    sleep = time.sleep if sleep is None else sleep
+    errors = errors if isinstance(errors, list) else []
+    P = prev if isinstance(prev, dict) else {}
+    hist = {}
+    for r in P.get('hist') if isinstance(P.get('hist'), list) else []:
+        if isinstance(r, list) and len(r) == 4 and isinstance(r[0], str) and re.match(r'^\d{4}-\d{2}-\d{2}$', r[0]):
+            hist[r[0]] = [r[0]] + [v if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 else None for v in r[1:]]
+    brak = {b for b in (P.get('brak') if isinstance(P.get('brak'), list) else []) if isinstance(b, str) and re.match(r'^\d{4}-\d{2}-\d{2}$', b)}
+    got = 0
+    for i, d in enumerate(pc_dni(set(hist), brak, today)):
+        if i:
+            sleep(PC_TEMPO)
+        s = d.isoformat()
+        try:
+            r = pc_parse(get_json(PC_URL.format(d=s), timeout=PC_TIMEOUT))
+            hist[s] = [s, r['total'], r['equity'], r['index']]; got += 1
+        except urllib.error.HTTPError as e:
+            if e.code in (403, 404) and pc_brak_pliku(e):
+                if (today - d).days >= PC_USTALONY:
+                    brak.add(s)
+                continue
+            errors.append(f'put/call {s}: HTTP {e.code}' + (' bez znacznika braku pliku' if e.code in (403, 404) else '')); break
+        except Exception as e:  # noqa
+            errors.append(mask(f'put/call {s}: {e}')); break
+    if not hist:
+        raise ValueError('brak danych')
+    rows = [hist[k] for k in sorted(hist)][-PC_DNI:]
+    last = rows[-1]
+    prog = pc_prog(today).isoformat()
+    return {'date': last[0], 'total': last[1], 'equity': last[2], 'index': last[3], 'hist': rows, 'n': len(rows),
+            'brak': sorted(b for b in brak if b >= prog)}, got
+
+
+def stres_czesci():
+    """Części pliku stres.json oczekiwane w tym przebiegu: indeks stresu zawsze; put/call tylko ze zgodą giełdy."""
+    return ('fsi', 'pc') if PC_ZGODA else ('fsi',)
+
+
+def build_stres(prev=None, now=None):
+    """data/stres.json — część fsi: dzienny indeks stresu finansowego (wartość, zmiana 1 dnia i 5 dni roboczych, 400 dni roboczych historii,
+    składowe i regiony); część pc: dzienne wskaźniki put/call jednej giełdy opcji USA (razem, akcje, indeksy; do 300 sesji, dopełniane po 10 dni
+    na przebieg, dni bez sesji — tylko potwierdzone XML magazynu plików — zapamiętane). Każda część osobno: błąd = poprzednia wersja tej części
+    z własnym czasem (part_at); brak liczby = None, nigdy zero;
+    nic i bez poprzedniego pliku = wyjątek.
+    Licencje (sprawdzone 26.09.2026): indeks stresu — praca rządu USA (Office of Financial Research, Skarb USA): domena publiczna, podpis
+    niewymagany (zdanie o legalnych źródłach publicznych na stronie Źródła wystarcza). Put/call — strona giełdy Cboe „Use of Content”
+    (cboe.com/use-of-content) mówi, że użycie JAKICHKOLWIEK danych giełdy — także na publicznym, bezpłatnym panelu z podpisem — wymaga
+    wcześniejszej zgody i podpisanej umowy licencyjnej (wniosek na adres podany na tej stronie, odpowiedź zwykle do 5 dni roboczych). Dlatego część pc
+    jest wyłączona (pc_off = True, w pliku nie ma klucza 'pc'), dopóki właściciel nie wpisze zgody do zmiennej środowiskowej CBOE_ZGODA
+    (np. w strona.yml: CBOE_ZGODA: ${{ vars.CBOE_ZGODA }} — treść dowolna, np. data i numer umowy); bez zgody stare dane put/call
+    z poprzedniego pliku też nie są przepisywane, a strona pokazuje wersję samego indeksu (tytuł, opis i nota bez put/call, bez żadnej noty
+    o wyłączeniu). Po zgodzie: dopisać podpis giełdy na stronie Źródła (zrCredits), jeśli umowa go wymaga."""
+    now = now or _now_utc()
+    prev = prev if isinstance(prev, dict) else {}
+    pat = prev.get('part_at') if isinstance(prev.get('part_at'), dict) else {}
+    out = {'at': NOW, 'src': 'Dzienny indeks stresu finansowego liczony z cen rynkowych (urząd badawczy przy Skarbie USA, plik CSV, domena publiczna)'
+                            + ('; dzienne wskaźniki put/call z giełdy opcji USA (plik JSON) — za pisemną zgodą giełdy' if PC_ZGODA else ''),
+           'ok': {}, 'part_at': {}, 'pc_off': not PC_ZGODA}
+    errs = []
+
+    def keep(k):   # część z błędem: poprzednia wersja z własnym czasem
+        out['ok'][k] = False
+        if isinstance(prev.get(k), dict):
+            out[k] = prev[k]; out['part_at'][k] = pat.get(k) or prev.get('at')
+
+    try:
+        _st, body = get(FSI_URL, timeout=FSI_TIMEOUT)
+        out['fsi'] = fsi_parse(body); out['ok']['fsi'] = True; out['part_at']['fsi'] = NOW
+    except Exception as e:  # noqa
+        errs.append(mask(f'indeks stresu: {e}')); keep('fsi')
+    if PC_ZGODA:
+        pe = []
+        try:
+            out['pc'], got = pc_czesc(prev.get('pc'), now, pe)
+            out['ok']['pc'] = not pe
+            out['part_at']['pc'] = NOW if (got or not pe) else (pat.get('pc') or prev.get('at') or NOW)
+        except Exception as e:  # noqa
+            pe.append(mask(f'put/call: {e}')); keep('pc')
+        errs += pe
+    if errs:
+        META['errors'].append(mask('Stres: ' + '; '.join(errs)[:400]))
+    if not any(isinstance(out.get(k), dict) for k in ('fsi', 'pc')):
+        raise RuntimeError('brak danych i poprzedniego pliku')
+    return out
+
+
+# --- v121: aukcje papierów skarbowych USA — popyt (bez klucza; dane rządu USA, domena publiczna) ---
+# Źródło główne: interfejs danych fiskalnych Skarbu USA (Fiscal Data, zbiór „Treasury Securities Auctions Data”,
+# https://fiscaldata.treasury.gov/datasets/treasury-securities-auctions-data/): jedno zapytanie, wszystkie rodzaje papierów, tylko potrzebne
+# pola (~180 KB na 13 miesięcy; ten sam host, z którego automat bierze saldo TGA). Zapas: serwis aukcyjny Skarbu (TreasuryDirect TA_WS,
+# https://www.treasurydirect.gov/TA_WS/securities/search): jedno zapytanie na rodzaj papieru (bony ≈ 1,3 MB). Oba: dzieła rządu USA,
+# domena publiczna (17 U.S.C. § 105), bez klucza. Nazwy urzędów i interfejsów — tutaj i na stronie Źródła; panel opisuje dane zwykłymi słowami.
+import statistics   # v121: mediany aukcji (biblioteka standardowa)
+
+AUK_EVERY = 6 * 60        # minuty: plik młodszy = z pamięci (wyniki aukcji przybywają raz dziennie, ok. 13:00 czasu Nowego Jorku)
+AUK_RETRY = 60            # minuty: plik z częścią z błędem (np. zbudowany z zapasu) ponawiany po godzinie
+AUK_HIST_DAYS = 400       # dni wstecz w zapytaniu: okno median (12 miesięcy) z zapasem
+AUK_MED_DAYS = 365        # okno median: 12 miesięcy wstecz od najnowszej aukcji z wynikami
+AUK_MED_MIN = 3           # mniej aukcji tego papieru w oknie = brak mediany (nie „mediana” z dwóch liczb)
+AUK_LAST = 40             # ile ostatnich aukcji z wynikami trafia do pliku (strona pokazuje 12)
+AUK_PAGE = 1500           # wierszy na stronę odpowiedzi (rok ≈ 480 aukcji)
+AUK_BUDGET_S = 150        # zapas: po tylu sekundach nie zaczynamy kolejnego zapytania o rodzaj papieru
+AUK_PARTS = ('last', 'med12m', 'full')   # full = źródło główne odpowiedziało i nic nie zabrakło
+AUK_TYPES = ('Bill', 'Note', 'Bond', 'TIPS', 'FRN')   # CMB (bony zarządzania gotówką) pominięte: nieregularne, mediana nie ma sensu
+AUK_TD_TYPES = ('Bill', 'Note', 'Bond', 'TIPS', 'FRN')
+AUK_FD_FIELDS = ('auction_date', 'security_type', 'security_term', 'original_security_term', 'reopening', 'cash_management_bill_cmb',
+                 'floating_rate', 'inflation_index_security', 'bid_to_cover_ratio', 'comp_accepted', 'indirect_bidder_accepted',
+                 'direct_bidder_accepted', 'primary_dealer_accepted', 'total_accepted', 'high_yield', 'high_investment_rate',
+                 'high_discnt_margin', 'cusip')
+AUK_FD_URL = ('https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/od/auctions_query'
+              '?sort=-auction_date&page[size]={n}&filter=auction_date:gte:{od}&fields=' + ','.join(AUK_FD_FIELDS))
+AUK_TD_URL = ('https://www.treasurydirect.gov/TA_WS/securities/search?format=json&type={typ}&dateFieldName=auctionDate'
+              '&startDate={od}&endDate={do}')
+AUK_SRC = ('Skarb USA — urzędowe wyniki aukcji papierów skarbowych (interfejs danych fiskalnych; zapas: serwis aukcyjny Skarbu); '
+           'dane rządu USA, domena publiczna; udziały kupujących liczone od kwot przyjętych w części konkurencyjnej')
+AUK_NOTES = ['aukcje bez wyników (przyszłe) pominięte — brak nie jest zerem',
+             'bony zarządzania gotówką (CMB) pominięte: nieregularne, bez mediany',
+             'udziały kupujących = procent kwot przyjętych w części konkurencyjnej (pośredni + bezpośredni + dealerzy = 100%)',
+             'termin bieżący, gdy jest pełną liczbą lat albo tygodni (bon 6-tygodniowy formalnie „otwiera ponownie” 26-tygodniowy; 2-latka sprzedana jako dodatkowa transza starej 5-latki to 2-latka); termin pierwotny tylko przy niepełnym terminie dodatkowej transzy (9 lat 11 mies. → 10 lat); znacznik dodatkowej transzy tylko przy obligacjach',
+             'rentowność: obligacje — najwyższa przyjęta; bony — stopa inwestycyjna; indeksowane inflacją — realna; zmienna stopa — marża dyskontowa',
+             f'mediana: aukcje tego samego papieru z {AUK_MED_DAYS} dni od najnowszej, co najmniej {AUK_MED_MIN}']
+
+
+def _auk_num(v):
+    """Liczba z pola tekstowego interfejsu („2.420000”, „null”, „”); śmieci, nieskończoność i NaN = None — nigdy 0."""
+    if v is None or isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        x = float(v)
+    else:
+        s = str(v).strip()
+        if not s or s.lower() == 'null':
+            return None
+        try:
+            x = float(s)
+        except ValueError:
+            return None
+    return x if x == x and abs(x) != float('inf') else None
+
+
+def _auk_yes(v):
+    return str(v or '').strip().lower() == 'yes'
+
+
+def auk_wiersz(r, api):
+    """Jeden wiersz aukcji w kształcie pliku albo None: bez wyników (przyszła aukcja), CMB, nieznany rodzaj, zła data.
+    api: 'fiscaldata' (pola z podkreśleniami) albo 'treasurydirect' (pola camelCase). Udziały kupujących pośrednich / bezpośrednich /
+    dealerów = procent kwot przyjętych w części konkurencyjnej (razem 100%); brak którejś kwoty = None. Rentowność wg rodzaju papieru."""
+    if not isinstance(r, dict):
+        return None
+    if api == 'fiscaldata':
+        typ = str(r.get('security_type') or '').strip()
+        if _auk_yes(r.get('cash_management_bill_cmb')):
+            typ = 'CMB'
+        elif _auk_yes(r.get('floating_rate')):
+            typ = 'FRN'
+        elif _auk_yes(r.get('inflation_index_security')):
+            typ = 'TIPS'
+        date = str(r.get('auction_date') or '')[:10]
+        term_now, term_org, reopen = r.get('security_term'), r.get('original_security_term'), _auk_yes(r.get('reopening'))
+        btc, comp = _auk_num(r.get('bid_to_cover_ratio')), _auk_num(r.get('comp_accepted'))
+        ind, dr, pd, tot = (_auk_num(r.get(k)) for k in ('indirect_bidder_accepted', 'direct_bidder_accepted', 'primary_dealer_accepted', 'total_accepted'))
+        hy, hi, hm = (_auk_num(r.get(k)) for k in ('high_yield', 'high_investment_rate', 'high_discnt_margin'))
+    else:
+        typ = str(r.get('type') or '').strip()
+        date = str(r.get('auctionDate') or '')[:10]
+        term_now, term_org, reopen = r.get('securityTerm'), r.get('originalSecurityTerm'), _auk_yes(r.get('reopening'))
+        btc, comp = _auk_num(r.get('bidToCoverRatio')), _auk_num(r.get('competitiveAccepted'))
+        ind, dr, pd, tot = (_auk_num(r.get(k)) for k in ('indirectBidderAccepted', 'directBidderAccepted', 'primaryDealerAccepted', 'totalAccepted'))
+        hy, hi, hm = (_auk_num(r.get(k)) for k in ('highYield', 'highInvestmentRate', 'highDiscountMargin'))
+    if typ not in AUK_TYPES or not re.match(r'^\d{4}-\d{2}-\d{2}$', date):
+        return None
+    try:   # data niemożliwa (np. miesiąc 19) = wiersz pominięty; inaczej mediany wywróciłyby cały przebieg po udanym pobraniu
+        datetime.date.fromisoformat(date)
+    except ValueError:
+        return None
+    if btc is None or btc <= 0 or tot is None or tot <= 0:   # bez wyników (przyszła aukcja) — pomijamy; zero nie jest wynikiem
+        return None
+    # termin: bieżący, gdy jest pełną liczbą lat albo tygodni — bony zawsze, a także 2-latka sprzedana jako dodatkowa transza starej 5-latki
+    # (26.01.2026: termin „2-Year”, pierwotny „5-Year” — to aukcja 2-latki); pierwotny tylko przy niepełnym terminie dodatkowej transzy
+    # („9-Year 11-Month” → 10 lat, „1-Year 10-Month” zmiennej stopy → 2 lata)
+    term_now_s = str(term_now or '').strip()
+    if typ == 'Bill' or re.match(r'^\d+-(Year|Week)$', term_now_s):
+        term = term_now_s
+    else:
+        term = str(term_org or term_now_s).strip()
+    if not term:
+        return None
+    reopen = bool(reopen) and typ != 'Bill'   # bony: prawie każda emisja formalnie „otwiera ponownie” starszy CUSIP — dla czytelnika to nie jest informacja
+    if comp is None and None not in (ind, dr, pd):
+        comp = ind + dr + pd
+    pct = lambda x: round(x / comp * 100, 1) if (x is not None and comp is not None and comp > 0) else None   # noqa: E731
+    if typ == 'Bill':
+        y, yk = hi, 'inv'
+    elif typ == 'FRN':
+        y, yk = hm, 'dm'
+    elif typ == 'TIPS':
+        y, yk = hy, 'real'
+    else:
+        y, yk = hy, 'yld'
+    cusip = str(r.get('cusip') or '').strip()
+    return {'date': date, 'type': typ, 'term': term, 'k': f'{typ} {term}', 'reopen': reopen, 'btc': round(btc, 2),
+            'indirect_pct': pct(ind), 'direct_pct': pct(dr), 'dealer_pct': pct(pd), 'yield': y, 'ykind': yk,
+            'accepted_bln': round(tot / 1e9, 3), 'cusip': cusip or None}
+
+
+def auk_mediany(rows):
+    """Mediany 12 miesięcy dla każdego papieru (klucz „rodzaj termin”, np. „Note 10-Year”) z aukcji w oknie AUK_MED_DAYS od najnowszej;
+    mniej niż AUK_MED_MIN aukcji = brak mediany (papier nieobecny w wyniku). Wynik: {klucz: {btc, indirect_pct, n, from, to}}."""
+    if not rows:
+        return {}
+    newest = max(r['date'] for r in rows)
+    od = (datetime.date.fromisoformat(newest) - datetime.timedelta(days=AUK_MED_DAYS)).isoformat()
+    grp = {}
+    for r in rows:
+        if r['date'] >= od:
+            grp.setdefault(r['k'], []).append(r)
+    out = {}
+    for k in sorted(grp):
+        g = grp[k]
+        b = [r['btc'] for r in g if r['btc'] is not None]
+        i = [r['indirect_pct'] for r in g if r['indirect_pct'] is not None]
+        if len(b) < AUK_MED_MIN:
+            continue
+        out[k] = {'btc': round(statistics.median(b), 2), 'indirect_pct': round(statistics.median(i), 1) if len(i) >= AUK_MED_MIN else None,
+                  'n': len(b), 'from': min(r['date'] for r in g), 'to': max(r['date'] for r in g)}
+    return out
+
+
+def auk_fd(now):
+    """Źródło główne: jedno zapytanie o aukcje od AUK_HIST_DAYS dni wstecz (wszystkie rodzaje, wybrane pola). Wynik: wiersze z wynikami."""
+    od = (now.date() - datetime.timedelta(days=AUK_HIST_DAYS)).isoformat()
+    j = get_json(AUK_FD_URL.format(n=AUK_PAGE, od=od), timeout=90)
+    data = j.get('data') if isinstance(j, dict) else None
+    if not isinstance(data, list):
+        raise ValueError('odpowiedź bez listy „data”')
+    rows = [w for w in (auk_wiersz(r, 'fiscaldata') for r in data) if w]
+    if not rows:
+        raise ValueError('brak aukcji z wynikami')
+    return rows
+
+
+def auk_td(now, errors, t0=None):
+    """Zapas: serwis aukcyjny Skarbu, jedno zapytanie na rodzaj papieru (zakres dat MM/DD/RRRR). Rodzaj z błędem = wpis w errors,
+    reszta zostaje; po AUK_BUDGET_S s bez kolejnych zapytań. Zwraca (wiersze, rodzaje pobrane); nic = wyjątek."""
+    t0 = time.monotonic() if t0 is None else t0
+    od = (now.date() - datetime.timedelta(days=AUK_HIST_DAYS)).strftime('%m/%d/%Y')
+    do = (now.date() + datetime.timedelta(days=14)).strftime('%m/%d/%Y')
+    rows, got = [], []
+    for typ in AUK_TD_TYPES:
+        if time.monotonic() - t0 > AUK_BUDGET_S:
+            errors.append(f'serwis aukcyjny {typ}: pominięty (limit czasu)')
+            continue
+        try:
+            j = get_json(AUK_TD_URL.format(typ=typ, od=od, do=do), timeout=60)
+            if not isinstance(j, list):
+                raise ValueError('odpowiedź nie jest listą')
+            rows += [w for w in (auk_wiersz(r, 'treasurydirect') for r in j) if w]
+            got.append(typ)
+        except Exception as e:  # noqa
+            errors.append(mask(f'serwis aukcyjny {typ}: {e}'))
+    if not rows:
+        raise ValueError('brak aukcji z wynikami')
+    return rows, got
+
+
+def build_aukcje(prev=None, now=None):
+    """data/aukcje.json — popyt na aukcjach papierów skarbowych USA: ostatnie AUK_LAST aukcji z wynikami (data, rodzaj, termin, stosunek
+    ofert do sprzedaży, udziały kupujących pośrednich / bezpośrednich / dealerów, rentowność, sprzedano w mld USD) i mediany 12 miesięcy
+    dla każdego papieru. Źródło główne: interfejs danych fiskalnych Skarbu USA; zapas: serwis aukcyjny Skarbu (rodzaj po rodzaju).
+    Aukcje bez wyników (przyszłe) pominięte, nigdy zero; brak liczby = None. Oba źródła zawiodły = wyjątek (main zostawia poprzedni plik).
+    Licencja: dzieła rządu USA, domena publiczna (17 U.S.C. § 105); Fiscal Data i TreasuryDirect nie wymagają klucza ani podpisu.
+    `prev` nieużywany (każdy przebieg pobiera pełne okno) — zostaje dla jednolitego wywołania z main()."""
+    now = now or _now_utc()
+    t0 = time.monotonic()
+    errors, brak = [], []
+    try:
+        rows, api = auk_fd(now), 'fiscaldata'
+    except Exception as e:  # noqa
+        errors.append(mask(f'dane fiskalne: {e}'))
+        try:
+            rows, got = auk_td(now, errors, t0)
+        except Exception as e2:  # noqa
+            raise RuntimeError('; '.join(errors + [mask(str(e2))]))
+        api = 'treasurydirect'
+        brak = [t for t in AUK_TD_TYPES if t not in got]
+    seen, uniq = set(), []
+    for r in rows:   # jeden wiersz na aukcję (CUSIP + dzień; bez CUSIP — papier + dzień)
+        key = (r['cusip'] or r['k'], r['date'])
+        if key in seen:
+            continue
+        seen.add(key); uniq.append(r)
+    uniq.sort(key=lambda r: r['date'], reverse=True)   # stabilnie: aukcje tego samego dnia w kolejności źródła
+    last = uniq[:AUK_LAST]
+    med = auk_mediany(uniq)
+    out = {'at': NOW, 'src': AUK_SRC, 'api': api, 'ok': {'last': bool(last), 'med12m': bool(med), 'full': not errors},
+           'last': last, 'med12m': med, 'n': len(uniq), 'from': uniq[-1]['date'], 'to': uniq[0]['date'], 'notes': list(AUK_NOTES)}
+    if brak:
+        out['notes'].append('zapas bez rodzajów: ' + ', '.join(brak))
+    if errors:
+        META['errors'].append(mask('Aukcje: ' + '; '.join(errors)[:400]))
+    return out
+
+
 def main():
     SAVED.clear()      # v89: TRENDY liczone tylko z plików tego przebiegu
     _DEADLINE[0] = time.monotonic() + SOSO_BUDGET
@@ -7025,6 +7811,50 @@ def main():
         except Exception as e:
             META['errors'].append(mask(f'{KC_LABEL}: {e}')); META['ok']['ceny-krypto'] = False
             if prev_kc: save('ceny-krypto', prev_kc)
+    # v121: insiderzy spółek USA — zgłoszenia Form 4 (EDGAR, bez klucza): dzień zgłoszeń czytany raz, od 04:00 UTC dnia następnego,
+    # kolejka na kilka przebiegów (budżet czasu); brak indeksu (weekend, święto) = dzień pusty, nie błąd; awaria = poprzedni plik i błąd.
+    # Urząd wymaga adresu kontaktowego w User-Agent — tylko z sekretu SEC_CONTACT (maskowany w komunikatach, pilnowany przez straż kluczy);
+    # bez niego (albo gdy to nie adres e-mail) część wyłączona: notatka, bez zapytań, poprzedni plik zostaje
+    sec_contact = os.environ.get('SEC_CONTACT', '').strip()
+    if sec_contact:
+        SECRETS.append(sec_contact)
+    prev_ins = previous('insider')
+    if not ins_ua(sec_contact):
+        META['notes'].append(('SEC_CONTACT to nie adres e-mail' if sec_contact else 'brak SEC_CONTACT') + ' — insiderzy (zgłoszenia Form 4) wyłączeni')
+        if prev_ins:
+            save('insider', prev_ins)
+    else:
+        try:
+            ins = build_insider(prev_ins, contact=sec_contact); save('insider', ins); META['ok']['insider'] = bool((ins.get('ok') or {}).get('sec'))
+        except Exception as e:
+            META['errors'].append(mask(f'Insiderzy: {e}')); META['ok']['insider'] = False
+            if prev_ins: save('insider', prev_ins)
+    # v121: stres finansowy USA (indeks stresu — bez klucza) i put/call (tylko z pisemną zgodą giełdy: CBOE_ZGODA) — co 6 h; część z błędem
+    # ponawiana po godzinie; zmiana stanu zgody = przebudowa (bez zgody stare put/call nie są przepisywane); awaria = poprzedni plik i błąd
+    if not PC_ZGODA:
+        META['notes'].append('Stres: część put/call wyłączona (zmienna CBOE_ZGODA pusta)')
+    prev_st = previous('stres')
+    pok_st = (prev_st or {}).get('ok') or {}
+    if prev_st and fresh(prev_st, STRES_EVERY) and bool(prev_st.get('pc_off')) == (not PC_ZGODA) and (all(pok_st.get(k) for k in stres_czesci()) or fresh(prev_st, STRES_RETRY)):
+        save('stres', prev_st); META['ok']['stres'] = 'cached'
+    else:
+        try:
+            st_ = build_stres(prev_st); save('stres', st_); META['ok']['stres'] = all(st_['ok'].get(k) for k in stres_czesci())
+        except Exception as e:
+            META['errors'].append(mask(f'Stres: {e}')); META['ok']['stres'] = False
+            if prev_st: save('stres', prev_st)
+    # v121: aukcje papierów skarbowych USA (bez klucza; dane rządu USA): co 6 h; plik zbudowany z zapasu albo z błędem części — ponowna próba
+    # po godzinie; awaria obu źródeł = poprzedni plik i błąd (strona pokazuje datę i wiek każdej aukcji)
+    prev_au = previous('aukcje')
+    pok_au = prev_au.get('ok') if isinstance(prev_au, dict) and isinstance(prev_au.get('ok'), dict) else {}
+    if prev_au and fresh(prev_au, AUK_EVERY) and (all(pok_au.get(k) for k in AUK_PARTS) or fresh(prev_au, AUK_RETRY)):
+        save('aukcje', prev_au); META['ok']['aukcje'] = 'cached'
+    else:
+        try:
+            au = build_aukcje(prev_au); save('aukcje', au); META['ok']['aukcje'] = bool(au['ok'].get('last'))
+        except Exception as e:
+            META['errors'].append(mask(f'Aukcje: {e}')); META['ok']['aukcje'] = False
+            if prev_au: save('aukcje', prev_au)
     # v106: indeksy świata (EODHD, rotacja 20 zapytań na dobę) i notowania ETF (Massive, zapas Tiingo) — klucze właściciela; co godzinę;
     # brak klucza = informacja (notes), nie błąd; awaria = poprzedni plik
     ix_keys = {k: os.environ.get(k, '').strip() for k in IX_KEYS}

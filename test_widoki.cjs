@@ -4643,3 +4643,274 @@ test('v121: ceny krypto — podpis licencji danych (CC BY-NC-SA 4.0, „Binance 
   const k0 = html.indexOf('/* ===================== v121: CENY KRYPTO'), k1 = html.indexOf('/* ===================== v98: USA', k0);
   assert.ok(!/Binance/i.test(html.slice(k0, k1)), 'blok panelu bez nazwy dostawcy');
 });
+
+test('v121: insiderzy — blok strony: kafelki (zakupy, sprzedaż, stosunek, zgłoszenia), największe spółki, lista 30 dni ze słupkami, dzień w toku, brak ≠ zero, ukryte bez danych, wczytanie pliku', () => {
+  const i0 = html.indexOf('/* ===================== v121: INSIDERZY SPÓŁEK USA'), i1 = html.indexOf('\nfunction insLoad(', i0);
+  assert.ok(i0 > 0 && i1 > i0, 'blok v121 na stronie');
+  const mk = ($) => new Function('$', 't', 'nfmt', 'escH', 'gAgeNote', 'engDate', 'LOCALE', 'LANG', html.slice(i0, i1) +
+    '\nreturn {INS, INS_DAYS, INS_MAX_AGE, insRows, insUsd, insRatio, insExact, insTop, insList, insTops, insBody, renderIns, insApply};')(
+    $ || (() => null), (k, o) => k + (o ? JSON.stringify(o) : ''), (v, d) => Number(v).toFixed(d),
+    s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c])), d => ' · age(' + d + ')', iso => 'D(' + iso + ')', {pl: 'pl-PL', en: 'en-US'}, 'en');
+  const X = mk();
+  assert.equal(X.insUsd(1.5e6), '1.5 ins.mln'); assert.equal(X.insUsd(2.25e9), '2.25 ins.mld'); assert.equal(X.insUsd(37047.9), '37.0 ins.tys'); assert.equal(X.insUsd(500), '500 USD'); assert.equal(X.insUsd(null), '—'); assert.equal(X.insUsd(-1), '—'); assert.equal(X.insUsd(0), '0 USD', 'prawdziwe zero dnia bez transakcji zostaje zerem');
+  assert.equal(X.insRatio(35), '35.0'); assert.equal(X.insRatio(0.42), '0.42'); assert.equal(X.insRatio(0.001), '0.001'); assert.equal(X.insRatio(0.0004), '<0.001'); assert.equal(X.insRatio(0), '0.000'); assert.equal(X.insRatio(null), '—');
+  assert.equal(X.insExact(1234.6), '1235 USD'); assert.equal(X.insExact(null), '');
+  assert.deepEqual(X.insRows([['2026-09-25', 1, 2, 1, 1], ['2026-09-24', null, null, null, null], ['zła', 1, 2], ['2026-09-23', -1, 2], 'x', ['2026-09-22', 5, 'a']]), [['2026-09-24', null, null, null, null], ['2026-09-25', 1, 2, 1, 1]], 'wiersze bez liczby (null) zostają jako brak, ujemne i śmieci odpadają, kolejność rosnąca');
+  const today = new Date().toISOString().slice(0, 10);
+  const days = []; for (let i = 34; i >= 0; i--) { const d = new Date(Date.now() - i * 864e5); days.push(d.toISOString().slice(0, 10)); }
+  const hist = days.map((d, i) => i === 10 ? [d, null, null, null, null] : [d, (i + 1) * 1e6, i === 30 ? 0 : (35 - i) * 1e6, i, 35 - i]);
+  const D = {at: '2026-09-26T04:20:00+00:00', day: today, done: true, n_filings: 812, n_queued: 700, n_parsed: 700, n_fail: 2, buys_usd: 35e6, sells_usd: 1e6, n_buy: 34, n_sell: 1, ratio: 35, share: 97.2,
+    top_buys: [['Acme & Sons', 'ACME', 20e6], ['Beta <Corp>', null, 15e6], ['zero', 'Z', 0]], top_sells: [['Gamma', 'GAM', 1e6]], hist};
+  const body = X.insBody(D);
+  assert.ok(body.includes('ins.k.buy') && body.includes('35.0 ins.mln') && body.includes('ins.k.rep{"n":"34"}') && body.includes('title="35000000 USD"'), 'kafelek zakupów z liczbą zgłoszeń i dokładną kwotą');
+  assert.ok(body.includes('ins.k.sell') && body.includes('1.0 ins.mln') && body.includes('ins.k.rep{"n":"1"}'), 'kafelek sprzedaży');
+  assert.ok(body.includes('ins.k.ratio') && body.includes('>35.0<small>ins.k.share{"p":"97.2"}') , 'stosunek z udziałem');
+  assert.ok(body.includes('ins.k.nv{"n":"700","m":"700"}') && body.includes('ins.cap{"n":"812","m":"700"}') && !body.includes('ins.full'), 'dzień z limitem 700 opisany');
+  assert.ok(body.includes('age(' + today + ')'), 'wiek dnia danych przy kafelkach');
+  assert.ok(body.includes('Acme &amp; Sons') && body.includes('<small>ACME</small>') && body.includes('Beta &lt;Corp&gt;') && !body.includes('>zero<'), 'największe spółki: nazwy uciekane, ticker w small, zero pominięte');
+  assert.ok(body.includes('ins.h.topb{"d":') && body.includes('ins.h.tops{"d":'), 'nagłówki list z dniem');
+  const tb = body.slice(body.indexOf('<tbody>'), body.indexOf('</tbody>'));
+  assert.equal((tb.match(/<tr/g) || []).length, X.INS_DAYS, 'lista ma 30 wierszy'); assert.ok(body.includes('ins.h.hist{"n":"30"}'));
+  const first = tb.slice(0, tb.indexOf('</tr>'));
+  assert.ok(first.includes('width:100%') && first.includes('ins-bar s') && first.includes('35.0 ins.mln') && first.includes('mono pos">+34.0 ins.mln') && first.includes('34 / 1'), 'najnowszy dzień pierwszy: pełny słupek zakupów, netto dodatnie, zgłoszenia');
+  const rows = tb.split('</tr>');
+  const nullRow = rows.find(r => r.includes('cell mono na">—'));
+  assert.ok(nullRow && !nullRow.includes('ins-bar') && nullRow.includes('mono na">—'), 'dzień bez liczby: „—” bez słupka, nie zero');
+  const zeroSell = rows[4];
+  assert.ok(zeroSell.includes('0 USD') && zeroSell.includes('width:1%'), 'zero sprzedaży = zero (najwęższy słupek), nie brak');
+  assert.ok(!body.includes('ins.part'), 'pełny dzień bez „w toku”');
+  const P = X.insBody(Object.assign({}, D, {done: false, n_parsed: 120, n_queued: 700, n_filings: 700}));
+  assert.ok(P.includes('ins.part') && P.includes('ins.k.nv{"n":"120","m":"700"}') && P.includes('class="ins-part"') && P.includes('ins.part.s') && !P.includes('ins.cap'), 'dzień w toku oznaczony w kafelku i w wierszu');
+  const N = X.insBody(Object.assign({}, D, {ratio: null, share: null, buys_usd: null, n_buy: null, hist: [[today, null, null, null, null]], top_buys: [], top_sells: []}));
+  assert.ok(N.includes('ins.k.noshare') && N.includes('class="na"') && !N.includes('ins-top') && N.includes('ins.h.hist{"n":"1"}'), 'brak stosunku i brak kwot = „—”, bez list spółek');
+  const Q = X.insBody(Object.assign({}, D, {done: false, n_parsed: 0, buys_usd: null, sells_usd: null, n_buy: 0, n_sell: 0, ratio: null, share: null}));
+  assert.ok(!Q.includes('ins.k.rep{"n":"0"}') && Q.includes('ins.k.nv{"n":"0","m":"700"}') && Q.includes('class="na"'), 'nic nie odczytane: „—” bez „0 zgłoszeń” pod spodem (brak ≠ zero)');
+  assert.equal(X.insBody(null), ''); assert.equal(X.insBody({day: 'x'}), ''); assert.equal(X.insBody({day: today, hist: []}), '');
+  assert.equal(X.insTops({top_buys: 'x', top_sells: null}), '');
+  const el = {hidden: false, innerHTML: 'x'}, Y = mk(q => q === '#g-insider' ? el : null);
+  Y.renderIns(); assert.ok(el.hidden === true && el.innerHTML === '', 'bez danych — sekcja ukryta');
+  Y.insApply(D); assert.ok(el.hidden === false && el.innerHTML.includes('ins.t') && el.innerHTML.includes('ins.sub') && el.innerHTML.includes('inst.file{"t":"D(2026-09-26T04:20:00+00:00)"}') && el.innerHTML.includes('ins.not') && el.innerHTML.includes('ins.delay') && el.innerHTML.includes('eng.disclaimer'), 'panel z nagłówkiem, czasem pliku, notą o opóźnieniu i „czego nie mówią”');
+  Y.insApply(null); assert.ok(el.hidden === false && Y.INS.data === D, 'chwilowy błąd pobrania nie zasłania danych');
+  const Z = mk(q => q === '#g-insider' ? el : null);
+  Z.insApply({at: 'x', day: '2020-01-01', hist: [['2020-01-01', 1, 1, 1, 1]]}); assert.ok(Z.INS.data === null && el.hidden === true, 'dzień starszy niż INS_MAX_AGE — ukryte');
+  Z.insApply({day: today}); assert.ok(Z.INS.data === null, 'bez pola at — odrzucone');
+  Z.insApply('śmieć'); assert.ok(Z.INS.data === null);
+});
+
+test('v121: insiderzy — słownik EXTRA112 w 10 językach (te same klucze, miejsca na liczby, bez nazwy urzędu w panelu); sekcja po archiwum GLOBAL, styl, plik, odświeżanie', () => {
+  const KEYS = ['ins.t', 'ins.sub', 'ins.k.buy', 'ins.k.sell', 'ins.k.rep', 'ins.k.ratio', 'ins.k.share', 'ins.k.noshare', 'ins.k.n', 'ins.k.nv', 'ins.part', 'ins.part.s', 'ins.cap', 'ins.full',
+    'ins.h.hist', 'ins.c.day', 'ins.c.buy', 'ins.c.sell', 'ins.c.net', 'ins.c.n', 'ins.h.topb', 'ins.h.tops', 'ins.none', 'ins.mln', 'ins.mld', 'ins.tys', 'ins.delay', 'ins.not'];
+  const m = html.match(/const EXTRA112=(\{.*?\});\n/s); assert.ok(m, 'słownik EXTRA112 na stronie');
+  const X = JSON.parse(m[1]);
+  assert.deepEqual(Object.keys(X).sort(), ['de', 'en', 'es', 'fr', 'it', 'ja', 'pl', 'pt', 'ru', 'zh']);
+  for (const L of ['pl', 'en', 'de', 'es', 'fr', 'it', 'pt', 'ru', 'zh', 'ja']) {
+    assert.deepEqual(Object.keys(X[L]).sort(), KEYS.slice().sort(), 'te same klucze: ' + L);
+    const tt = v96src.tFor(L);
+    assert.ok(KEYS.every(k => typeof v96src.I18N[L][k] === 'string' && v96src.I18N[L][k].trim()), 'słownik wczytany: ' + L);
+    for (const k of KEYS) assert.ok(!/\bSEC\b|EDGAR/.test(tt(k)), L + ' ' + k + ': bez nazwy urzędu w panelu');
+    assert.ok(tt('ins.k.rep', {n: '7'}).includes('7') && !tt('ins.k.rep', {n: '7'}).includes('{'), L + ' rep');
+    const nv = tt('ins.k.nv', {n: '7', m: '25'}); assert.ok(nv.includes('7') && nv.includes('25') && !nv.includes('{'), L + ' nv');
+    const cap = tt('ins.cap', {n: '812', m: '700'}); assert.ok(cap.includes('812') && cap.includes('700') && !cap.includes('{'), L + ' cap');
+    assert.ok(tt('ins.k.share', {p: '97,2'}).includes('97,2') && tt('ins.h.hist', {n: '30'}).includes('30') && tt('ins.h.topb', {d: 'XYZ'}).includes('XYZ') && tt('ins.h.tops', {d: 'XYZ'}).includes('XYZ'), L + ' miejsca na liczby');
+    assert.ok(/2/.test(tt('ins.delay')), L + ': nota o 2 dniach roboczych');
+  }
+  assert.ok(v96src.tFor('pl')('ins.t').includes('Insiderzy') && v96src.tFor('en')('ins.t').includes('insiders'), 'tytuł');
+  assert.ok(v96src.tFor('pl')('ins.not').includes('nie zero') && v96src.tFor('en')('ins.not').includes('not zero'), 'brak ≠ zero w nocie');
+  assert.equal(html.split('<section class="panel pcard" id="g-insider" hidden></section>').length, 2, 'jedno miejsce sekcji');
+  const u = html.indexOf('<section class="panel pcard" id="g-archiwum" hidden></section>'), x = html.indexOf('<section class="panel pcard" id="g-insider" hidden></section>');
+  assert.ok(x > u && x < u + 400, 'po panelu archiwum (zakładka GLOBAL)');
+  assert.ok(html.includes("srvJSON('insider')") && html.includes('/* v121 insiderzy */') && html.includes('#g-insider .etft{min-width:0;width:100%}') && html.includes('#g-insider .ins-bar{'), 'plik, styl');
+  assert.ok(html.includes('for(const l in EXTRA112)if(I18N[l])Object.assign(I18N[l],EXTRA112[l]);'), 'słownik dołączony');
+  assert.ok(html.includes('if(!ok&&INS.data)return;') && html.includes('INS.timer=setInterval(()=>{if(!document.hidden)insLoad();},60*60*1000)'), 'odświeżanie co 60 min, błąd nie zasłania danych');
+  assert.equal(html.split('/* ===================== v121: INSIDERZY SPÓŁEK USA').length, 2);
+  const s0 = html.indexOf('<script>'), s1 = html.lastIndexOf('</script>'); new Function(html.slice(s0 + 8, s1));
+});
+
+// ===== v121 — obszar stres-opcje: indeks stresu finansowego USA i wskaźniki put/call (plik data/stres.json, słownik EXTRA113) =====
+const str121 = (() => {
+  const i0 = html.indexOf('/* ===================== v121: STRES FINANSOWY USA'), i1 = html.indexOf('\nfunction strLoad(', i0);
+  const mk = ($) => new Function('$', 't', 'nfmt', 'escH', 'gAgeNote', 'engDate', 'LOCALE', 'LANG', html.slice(i0, i1) +
+    '\nreturn {STR, STR_COLS, strRows, strMinMax, strDelta, strVal, strFsi, strPc, strPcOn, strBody, renderStr, strApply};')(
+    $ || (() => null), (k, o) => k + (o ? JSON.stringify(o) : ''), (v, d) => Number(v).toFixed(d), v96src.escH, d => ' · age(' + d + ')', iso => 'D(' + iso + ')', {pl: 'pl-PL', en: 'en-US'}, 'en');
+  return {i0, i1, mk};
+})();
+
+test('v121: stres i opcje — pomocnicze: wiersze rosnąco, najniżej/najwyżej z 60 sesji tylko z liczb, zmiana bez zera w kolorze, wzrost stresu na czerwono, brak ≠ zero', () => {
+  assert.ok(str121.i0 > 0 && str121.i1 > str121.i0, 'blok v121 na stronie'); const X = str121.mk();
+  assert.deepEqual(X.strRows([['2026-09-23', -2.663], ['2026-09-21', -2.727], ['zła', 1], 'x', ['2026-09-22', null], ['2026-09-24', '1']]), [['2026-09-21', -2.727], ['2026-09-22', null], ['2026-09-23', -2.663], ['2026-09-24', null]]);
+  const H = []; for (let i = 0; i < 80; i++) { const d = new Date(Date.UTC(2026, 5, 1 + i)); H.push([d.toISOString().slice(0, 10), i === 70 ? null : (i % 7 === 0 ? -3 - i / 100 : -2 + i / 100)]); }
+  const mm = X.strMinMax(H, 1, 60);   // ostatnie 60 wierszy (i = 20…79), bez i = 70 (brak) → 59 liczb; najniżej i = 77, najwyżej i = 79
+  assert.deepEqual(mm, {n: 59, min: H[77][1], dmin: H[77][0], max: H[79][1], dmax: H[79][0]});
+  assert.equal(X.strMinMax([['2026-09-23', 1]], 1, 60), null, 'jedna liczba to nie zakres'); assert.equal(X.strMinMax(null, 1, 60), null); assert.equal(X.strMinMax([['2026-09-23', null], ['2026-09-24', null]], 1, 60), null);
+  assert.deepEqual(X.strMinMax([['2026-09-23', 1, 5], ['2026-09-24', 2, 4], ['2026-09-25', 3, null]], 2, 60), {n: 2, min: 4, dmin: '2026-09-24', max: 5, dmax: '2026-09-23'}, 'inna kolumna');
+  assert.deepEqual(X.strDelta(0.004, 2, '1 D', 'inv'), {txt: '• 0.00 1 D', cls: ''}, 'zero po zaokrągleniu — bez strzałki i koloru');
+  assert.deepEqual(X.strDelta(0.11, 2, '1 D', 'inv'), {txt: '▲ +0.11 1 D', cls: 'neg'}, 'wzrost stresu = czerwony'); assert.deepEqual(X.strDelta(-0.163, 2, '5 S', 'inv'), {txt: '▼ −0.16 5 S', cls: 'pos'});
+  assert.deepEqual(X.strDelta(0.05, 2, '1 D', 'none'), {txt: '▲ +0.05 1 D', cls: ''}, 'put/call: bez koloru'); assert.deepEqual(X.strDelta(0.05, 2, '1 D'), {txt: '▲ +0.05 1 D', cls: 'pos'});
+  assert.deepEqual(X.strDelta(null, 2, '1 D', 'inv'), {txt: '— 1 D', cls: 'na'}); assert.deepEqual(X.strDelta(NaN, 2, '1 D'), {txt: '— 1 D', cls: 'na'}); assert.deepEqual(X.strDelta(0.01, 2, '', 'inv'), {txt: '▲ +0.01', cls: 'neg'});
+  assert.equal(X.strVal(-2.663, 2), '−2.66'); assert.equal(X.strVal(0.75, 2), '0.75'); assert.equal(X.strVal(null, 2), '—'); assert.equal(X.strVal('1', 2), '—'); assert.equal(X.strVal(Infinity, 2), '—');
+});
+
+test('v121: stres i opcje — panel z pliku: kafle z datą i wiekiem, składowe w tabeli, put/call wyłączone = wersja samego indeksu (bez noty o wyłączeniu), część bez danych = nota, bez pliku ukryty; EXTRA113 ×10 bez nazw dostawców; sekcja, styl, plik', () => {
+  const X = str121.mk();
+  const hist = []; for (let i = 0; i < 70; i++) { const d = new Date(Date.UTC(2026, 6, 1 + i)); hist.push([d.toISOString().slice(0, 10), -2 - i / 100]); }
+  const fsi = {date: '2026-09-23', value: -2.663, d1: 0.11, d5: -0.163, hist, cols: {credit: {v: null, d1: null}, equity: {v: -0.567, d1: 0.01}, vol: {v: -0.488, d1: 0.118}, zzz: {v: 1, d1: 1}, us: 'x'}};
+  const D = {at: '2026-09-26T14:00:00+00:00', ok: {fsi: true}, part_at: {fsi: '2026-09-26T14:00:00+00:00'}, pc_off: true, fsi};
+  const b = X.strBody(D);
+  assert.ok(b.startsWith('<div class="etfkpis"><div class="etfk"><span>st.k.fsi</span><b>−2.66<small class="neg">▲ +0.11 st.k.d1</small><small class="pos">▼ −0.16 st.k.d5</small></b><small class="mtxt">'), b.slice(0, 300));
+  assert.ok(b.includes('2026 · age(2026-09-23)</small></div></div>'), 'data i wiek danych pod kaflem');
+  assert.ok(b.includes('st.mm.fsi{"n":"60","min":"−2.69","dmin":"') && b.includes('","max":"−2.10","dmax":"'), 'najniżej/najwyżej z ostatnich 60 wierszy historii');
+  assert.equal((b.match(/<tr><td>/g) || []).length, 3, 'tylko znane składowe obecne w pliku (credit, equity, vol); nieznane klucze i śmieci pominięte');
+  assert.ok(b.indexOf('st.p.credit') < b.indexOf('st.p.equity') && b.indexOf('st.p.equity') < b.indexOf('st.p.vol'), 'kolejność z listy');
+  assert.ok(b.includes('<td><span class="cell mono na">—</span></td><td><span class="cell mono na">—</span></td>'), 'składowa bez liczby: „—” dwa razy, nie zero');
+  assert.ok(b.includes('<span class="cell mono">−0.57</span></td><td><span class="cell mono neg">▲ +0.01</span>') && b.includes('<span class="cell mono neg">▲ +0.12</span>'), 'wzrost składowej na czerwono');
+  assert.ok(b.includes('st.h.parts') && b.includes('st.c.part') && b.endsWith('<p class="pnote">st.note.fsi</p>') && !b.includes('st.pc.') && !b.includes('st.k.pc') && !b.includes('st.fsi.na') && !b.includes('pnote neu'), 'bez zgody: nota samego indeksu, żadnych kafli put/call ani noty o wyłączeniu');
+  assert.equal(X.strPcOn(D), false); assert.equal(X.strPcOn({pc_off: false}), true); assert.equal(X.strPcOn({}), true, 'plik bez pc_off (sprzed wyłączenia) = pełny panel');
+  assert.ok(!/undefined|NaN|\[object/.test(b));
+  const pc = {date: '2026-09-25', total: 0.75, equity: 0.52, index: null, hist: [['2026-09-24', 0.8, 0.55, 0.87], ['2026-09-25', 0.75, 0.52, null], ['2026-09-23', 0.9, 0.6, 1.0], ['x', 1, 1, 1]]};
+  const b2 = X.strBody(Object.assign({}, D, {pc_off: false, pc}));
+  assert.ok(b2.includes('<span>st.k.pc</span><b>0.75<small class="">▼ −0.05 st.k.d1</small></b><small class="mtxt">') && b2.includes('age(2026-09-25)'), 'put/call razem ze zmianą wobec poprzedniej sesji z historii, bez koloru');
+  assert.ok(b2.includes('<span>st.k.pce</span><b>0.52<small class="">▼ −0.03 st.k.d1</small></b>') && b2.includes('<span>st.k.pci</span><b>—<small class="na">— st.k.d1</small></b>'), 'indeksy bez liczby = „—”, nie zero');
+  assert.ok(b2.includes('st.mm.pc{"n":"3","min":"0.75","dmin":"') && b2.includes('","max":"0.90","dmax":"') && !b2.includes('st.pc.na') && b2.endsWith('<p class="pnote">st.note</p>'), 'ze zgodą: pełna nota');
+  assert.equal(X.strBody(Object.assign({}, D, {pc})), b, 'bez zgody dane put/call z pliku pomijane');
+  assert.ok((b2.match(/<div class="etfk">/g) || []).length === 4 && b2.indexOf('st.k.fsi') < b2.indexOf('st.k.pc'), 'cztery kafle: indeks, potem trzy put/call');
+  const b3 = X.strBody({at: 'x', pc_off: false, fsi});
+  assert.ok(b3.includes('<p class="pnote neu">st.pc.na</p>') && b3.endsWith('<p class="pnote">st.note</p>'), 'zgoda jest, danych nie ma = nota o braku danych');
+  const b4 = X.strBody({at: 'x', pc_off: false, pc});
+  assert.ok(b4.includes('<p class="pnote neu">st.fsi.na</p>') && b4.includes('st.k.pc') && !b4.includes('st.h.parts'), 'sam put/call: nota o indeksie, bez tabeli składowych');
+  assert.equal(X.strBody({at: 'x', pc_off: true, fsi: {date: '2026-09-23', value: null}}), '', 'indeks bez liczby i put/call wyłączone = nic (sekcja ukryta)'); assert.equal(X.strBody(null), ''); assert.equal(X.strBody({}), '');
+  const el = {hidden: false, innerHTML: 'x'}, Y = str121.mk(q => q === '#g-stres' ? el : null);
+  Y.renderStr(); assert.ok(el.hidden === true && el.innerHTML === '', 'bez danych — sekcja ukryta');
+  Y.strApply({at: 'zły'}); assert.equal(el.hidden, true); Y.strApply({at: '2026-09-26T14:00:00+00:00'}); assert.equal(el.hidden, true, 'plik bez obu części — ukryta');
+  Y.strApply(D);
+  assert.ok(el.hidden === false && el.innerHTML.includes('<h2>st.t.fsi</h2><p class="pnote">st.sub.fsi</p>') && el.innerHTML.includes('inst.file{"t":"D(2026-09-26T14:00:00+00:00)"}') && el.innerHTML.includes('eng.notsays') && el.innerHTML.includes('eng.disclaimer'), 'bez zgody: tytuł i opis samego indeksu');
+  assert.ok(el.innerHTML.includes('<p class="pnote">st.not1</p>') && !el.innerHTML.includes('st.not2') && !el.innerHTML.includes('st.not3') && !el.innerHTML.includes('>st.t<') && !el.innerHTML.includes('>st.sub<'), 'bez zgody: „czego nie mówi” tylko o indeksie');
+  Y.strApply(Object.assign({}, D, {pc_off: false, pc}));
+  assert.ok(el.innerHTML.includes('<h2>st.t</h2><p class="pnote">st.sub</p>') && el.innerHTML.includes('<p class="pnote">st.not2</p>') && el.innerHTML.includes('<p class="pnote">st.not3</p>') && el.innerHTML.includes('st.k.pc'), 'ze zgodą: pełny tytuł, opis i noty');
+  Y.strApply(null); assert.equal(el.hidden, false, 'chwilowy błąd pobrania nie zasłania wczytanych danych');
+  // słownik EXTRA113: 10 języków, te same klucze, miejsca na liczby, bez nazw dostawców, przetłumaczone
+  const e0 = html.indexOf('const EXTRA113='), e1 = html.indexOf(';\n', e0); assert.ok(e0 > 0 && e1 > e0, 'słownik EXTRA113');
+  const E = JSON.parse(html.slice(e0 + 'const EXTRA113='.length, e1)), LANGS = ['pl', 'en', 'de', 'es', 'fr', 'it', 'pt', 'ru', 'zh', 'ja'];
+  const KEYS = ['st.t', 'st.t.fsi', 'st.sub', 'st.sub.fsi', 'st.k.fsi', 'st.k.d1', 'st.k.d5', 'st.k.pc', 'st.k.pce', 'st.k.pci', 'st.h.parts', 'st.c.part', 'st.c.val', 'st.c.d1', 'st.p.credit', 'st.p.equity', 'st.p.safe', 'st.p.funding', 'st.p.vol', 'st.p.us', 'st.p.ae', 'st.p.em',
+    'st.mm.fsi', 'st.mm.pc', 'st.pc.na', 'st.fsi.na', 'st.note', 'st.note.fsi', 'st.not1', 'st.not2', 'st.not3'];
+  const PUTCALL = /put\/call|пут\/колл|看跌|プット/i;   // „put” samo trafia w „computed”
+  const PROV = /OFR|Cboe|CBOE|Office of Financial Research|financialresearch|Chicago Board/i;
+  assert.deepEqual(Object.keys(E), LANGS, 'polski pierwszy, dziesięć języków');
+  for (const L of LANGS) {
+    assert.deepEqual(Object.keys(E[L]).sort(), KEYS.slice().sort(), 'te same klucze: ' + L);
+    for (const k of KEYS) { const s = v96src.I18N[L][k]; assert.ok(typeof s === 'string' && s.trim() && s === E[L][k], L + ' ' + k + ' dołączony do I18N'); assert.ok(!PROV.test(s), 'bez nazw dostawców: ' + L + ' ' + k); }
+    for (const k of ['st.mm.fsi', 'st.mm.pc']) for (const v of ['{n}', '{min}', '{dmin}', '{max}', '{dmax}']) assert.ok(E[L][k].includes(v), L + ' ' + k + ' ' + v);
+    const u = v96src.tFor(L)('st.mm.fsi', {n: '60', min: 'A', dmin: 'B', max: 'C', dmax: 'Q'}); assert.ok(u.includes('60') && u.includes('A') && u.includes('Q') && !u.includes('{'), L + ' ' + u);
+    if (!['pl', 'en'].includes(L)) for (const k of ['st.t', 'st.t.fsi', 'st.sub', 'st.sub.fsi', 'st.note.fsi', 'st.not2', 'st.not3']) assert.notEqual(E[L][k], E.en[k], 'przetłumaczone: ' + L + ' ' + k);
+    for (const k of ['st.t.fsi', 'st.sub.fsi', 'st.note.fsi', 'st.not1', 'st.k.d5', 'st.mm.fsi']) assert.ok(!PUTCALL.test(E[L][k]), L + ' ' + k + ': wersja samego indeksu bez put/call');
+    for (const k of ['st.t', 'st.sub', 'st.note', 'st.not2', 'st.not3']) assert.ok(PUTCALL.test(E[L][k]) || /opcj|opci|option|opzion|opç|опцион|期权|オプション/i.test(E[L][k]), L + ' ' + k + ': pełna wersja mówi o put/call');
+    for (const k of ['st.note', 'st.note.fsi']) assert.ok(!/1\s*[–\-〜~]\s*2/.test(E[L][k]) && /2/.test(E[L][k]), L + ' ' + k + ': opóźnienie 2 dni robocze, nie „1–2”');
+    assert.ok(/0/.test(E[L]['st.sub.fsi']) && E[L]['st.sub'].startsWith(E[L]['st.sub.fsi'].split(/[.。]/)[0].slice(0, 20)), L + ': opis samego indeksu = początek pełnego');
+    assert.ok(/1/.test(E[L]['st.sub']) && /0/.test(E[L]['st.sub']), L + ': opis mówi o progu 0 (stres) i 1 (put/call)');
+  }
+  assert.ok(E.pl['st.sub'].includes('nie zmierzony przepływ') && E.en['st.sub'].includes('not a measured capital flow') && E.pl['st.sub.fsi'].includes('nie zmierzony przepływ') && E.en['st.sub.fsi'].includes('not a measured capital flow'), 'pomiar warunków ≠ przepływ');
+  assert.ok(E.en['st.sub'].includes('from a US options exchange') && E.pl['st.sub'].includes('z jednej z giełd opcji w USA'), 'jedna giełda opcji, nie „cały rynek opcji USA”');
+  assert.ok(E.en['st.k.d5'] === '5 business days' && E.pl['st.k.d5'] === '5 dni roboczych' && E.en['st.mm.fsi'].includes('business days') && E.en['st.mm.pc'].includes('sessions') && E.pl['st.mm.pc'].includes('sesjach'), 'indeks: dni robocze (także święta giełdowe); put/call: sesje');
+  assert.ok(E.pl['st.note'].includes('opóźnieniem 2 dni roboczych') && E.en['st.note'].includes('lag of 2 business days') && E.pl['st.not3'].startsWith('Put/call:') && E.en['st.not3'].startsWith('Put/call:'), 'opóźnienie 2 dni robocze; „bez sesji” tylko o put/call');
+  assert.ok(E.pl['st.not2'].includes('nie jest sygnałem kupna') && E.en['st.not2'].includes('buy or sell signal'), 'bez „kupuj/sprzedawaj”');
+  // sekcja, styl, plik, kolejność słownika, odświeżanie
+  assert.equal(html.split('<section class="panel pcard" id="g-stres" hidden></section>').length, 2, 'jedno miejsce sekcji');
+  const g = html.indexOf('<section class="panel pcard" id="g-archiwum" hidden></section>'), s = html.indexOf('<section class="panel pcard" id="g-stres" hidden></section>'), n = html.indexOf('<section class="panel pcard" id="inst" hidden></section>');
+  assert.ok(g > 0 && s > g && n > s, 'w zakładce GLOBAL: po archiwum, przed danymi urzędowymi');
+  assert.ok(html.includes("srvJSON('stres')") && html.includes('/* v121 stres */') && html.includes('#g-stres .etfk b small.neg{color:var(--rd-tx)}') && html.includes('#g-stres .etft{min-width:0;width:100%}'), 'plik, styl');
+  const apl = [...html.matchAll(/for\(const l in (EXTRA\d+)\)if\(I18N\[l\]\)Object\.assign\(I18N\[l\],\1\[l\]\);\n/g)].map(m => m[1]);
+  assert.ok(apl.indexOf('EXTRA113') > apl.indexOf('EXTRA109') && apl.indexOf('EXTRA109') >= 0, 'EXTRA113 dołączony po EXTRA109');
+  assert.ok(html.includes("if(!ok&&STR.data)return;") && html.includes("strLoad();strAuto();try{new MutationObserver(()=>renderStr()).observe(document.documentElement,{attributes:true,attributeFilter:['lang']});}catch(e){}"), 'chwilowy błąd nie zasłania danych; zmiana języka');
+  assert.ok(html.includes("STR.timer=setInterval(()=>{if(!document.hidden)strLoad();},60*60*1000);"), 'odświeżanie co godzinę (plik zmienia się co 6 h)');
+  assert.equal(html.split('/* ===================== v121: STRES FINANSOWY USA').length, 2);
+  assert.ok(html.indexOf('/* ===================== v121: STRES FINANSOWY USA') < html.indexOf('/* ===================== v98: USA'), 'blok przed blokiem USA (v98)');
+  const blok = html.slice(str121.i0, html.indexOf('\n', html.indexOf('strLoad();strAuto();')));
+  assert.ok(!PROV.test(blok), 'kod strony bez nazw dostawców');
+});
+
+test('v121: aukcje Skarbu USA — wiersze od najnowszej, strzałki wobec mediany 12 mies., termin i rodzaj papieru, brak ≠ zero, 12 z 40 wierszy, ukryte bez danych', () => {
+  const a0 = html.indexOf('/* ===================== v121: AUKCJE PAPIERÓW SKARBOWYCH USA'), a1 = html.indexOf('\nfunction aukLoad(', a0);
+  assert.ok(a0 > 0 && a1 > a0, 'blok v121 na stronie');
+  const mk = ($) => new Function('$', 't', 'nfmt', 'escH', 'gAgeNote', 'engDate', 'LOCALE', 'LANG', html.slice(a0, a1) +
+    '\nreturn {AUK, AUK_ROWS, aukRows, aukKey, aukMed, aukCmp, aukArrow, aukVal, aukPct, aukTerm, aukType, aukYield, aukBody, renderAuk, aukApply};')(
+    $ || (() => null), (k, o) => k + (o ? JSON.stringify(o) : ''), (v, d) => Number(v).toFixed(d),
+    s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c])), d => ' · age(' + d + ')', iso => 'D(' + iso + ')', {pl: 'pl-PL', en: 'en-US'}, 'en');
+  const X = mk();
+  const row = (date, type, term, btc, ind, extra) => Object.assign({date, type, term, k: type + ' ' + term, reopen: false, btc, indirect_pct: ind, direct_pct: 20.5, dealer_pct: ind == null ? null : 100 - ind - 20.5, yield: 4.5, ykind: 'yld', accepted_bln: 44.0, cusip: 'X'}, extra || {});
+  const last = [row('2026-09-24', 'Note', '7-Year', 2.42, 57.2), row('2026-09-24', 'Bill', '8-Week', 2.76, 58.8, {ykind: 'inv', yield: 4.071, accepted_bln: 92.026}),
+    row('2026-09-23', 'FRN', '2-Year', 2.63, 59.1, {ykind: 'dm', yield: 0.04}), row('2026-09-17', 'TIPS', '10-Year', 2.24, 59.1, {ykind: 'real', yield: 2.653}),
+    row('2026-09-09', 'Note', '10-Year', 2.71, null, {yield: null, accepted_bln: null, reopen: true}), row('2026-09-02', 'Note', '2-Year', 2.60, 50.0)];
+  for (let i = 0; i < 8; i++) last.push(row('2026-08-' + (20 - i), 'Bill', '4-Week', 2.9 + i / 100, 60 + i));
+  /* plik: śmieci, potem starsze bony od najstarszego, na końcu sześć nowszych aukcji w kolejności pliku (ten sam dzień 24.09: 7-latka przed bonem) */
+  const D = {at: new Date().toISOString(), last: [{date: 'bad', type: 'Note', term: '2-Year'}, {date: '2026-19-24', type: 'Note', term: '2-Year', btc: 2.5}, 'x', null, {date: '2026-01-01'}].concat(last.slice(6).reverse(), last.slice(0, 6)),
+    med12m: {'Note 7-Year': {btc: 2.40, indirect_pct: 60.0, n: 13}, 'Bill 8-Week': {btc: 2.76, indirect_pct: 55.0, n: 50}, 'Bill 4-Week': {btc: 2.95, indirect_pct: 61.0, n: 50}, 'Note 10-Year': {btc: 2.5, indirect_pct: 60, n: 12}}};
+  const R = X.aukRows(D);
+  assert.equal(R.length, 14, 'śmieci i data niemożliwa (miesiąc 19) odrzucone'); assert.equal(R[0].k, 'Note 7-Year'); assert.equal(R[1].k, 'Bill 8-Week', 'ten sam dzień — kolejność pliku'); assert.equal(R[13].date, '2026-08-13');
+  assert.equal(X.aukCmp(2.42, 2.40, 2), 1); assert.equal(X.aukCmp(2.404, 2.40, 2), 0, 'równe po zaokrągleniu'); assert.equal(X.aukCmp(2.3, 2.5, 2), -1); assert.equal(X.aukCmp(null, 2, 2), null); assert.equal(X.aukCmp(2, undefined, 1), null);
+  assert.equal(X.aukVal(null, 2, 2), '<span class="cell mono na">—</span>', 'brak = kreska, nie 0');
+  const up = X.aukVal(2.42, 2.40, 2); assert.ok(up.startsWith('<span class="cell mono pos">') && up.includes('2.42') && up.includes('auk-ar pos">▲') && up.includes('auk.med{"v":"2.40"}'), up);
+  const dn = X.aukVal(57.2, 60.0, 1, '%'); assert.ok(dn.includes('cell mono neg') && dn.includes('57.2%') && dn.includes('▼') && dn.includes('auk.med{"v":"60.0%"}'), dn);
+  const eq = X.aukVal(2.76, 2.76, 2); assert.ok(eq.startsWith('<span class="cell mono">') && eq.includes('auk-ar na">=') , 'tyle samo — bez koloru');
+  const nm = X.aukVal(2.6, null, 2); assert.ok(!nm.includes('auk-ar') && nm.includes('auk.nomed'), 'bez mediany — bez strzałki, z notą');
+  assert.equal(X.aukTerm('7-Year'), 'auk.y{"n":"7"}'); assert.equal(X.aukTerm('2-Year'), 'auk.y2{"n":"2"}'); assert.equal(X.aukTerm('3-Year'), 'auk.y2{"n":"3"}'); assert.equal(X.aukTerm('10-Year'), 'auk.y{"n":"10"}');
+  assert.equal(X.aukTerm('4-Week'), 'auk.w{"n":"4"}'); assert.equal(X.aukTerm('27-Day'), '27-Day', 'nieznany zapis dosłownie'); assert.equal(X.aukTerm(''), ''); assert.equal(X.aukTerm('<b>'), '&lt;b&gt;');
+  assert.equal(X.aukType({type: 'Note'}), 'Note', 'zaślepka t zwraca klucz — rodzaj dosłownie'); assert.equal(X.aukType({type: '<x>'}), '&lt;x&gt;');
+  assert.equal(X.aukYield({yield: null}), '<span class="cell mono na">—</span>'); assert.ok(X.aukYield({yield: 4.071, ykind: 'inv'}).includes('4.071%') && X.aukYield({yield: 4.071, ykind: 'inv'}).includes('auk.yk.inv'));
+  assert.ok(!X.aukYield({yield: 5.085, ykind: 'yld'}).includes('auk.yk'), 'zwykła rentowność bez podpisu');
+  const body = X.aukBody(D);
+  assert.equal((body.match(/<tr><td>/g) || []).length, 12, '12 z 14 wierszy'); assert.ok(!/undefined|NaN|\[object/.test(body), body.slice(0, 200));
+  assert.ok(body.indexOf('auk.y{"n":"7"} · Note') < body.indexOf('auk.w{"n":"8"} · Bill') && body.indexOf('auk.w{"n":"8"} · Bill') < body.indexOf('auk.y2{"n":"2"} · FRN'), 'od najnowszej');
+  assert.ok(body.includes('<small class="auk-re">auk.reopen</small>') && (body.match(/auk\.reopen/g) || []).length === 1, 'dodatkowa transza oznaczona raz');
+  assert.ok(body.includes('age(2026-09-24)') && body.includes('age(2026-09-09)'), 'każda aukcja z wiekiem');
+  const r10 = body.slice(body.indexOf('auk.y{"n":"10"} · Note'), body.indexOf('auk.y2{"n":"2"} · Note'));
+  assert.equal((r10.match(/<span class="cell mono na">—<\/span>/g) || []).length, 4, '10-latka bez udziałów, rentowności i kwoty: cztery kreski, żadnego zera');
+  assert.ok(r10.includes('2.71') && r10.includes('▲'), 'stosunek ofert 2,71 wobec mediany 2,5 = wyżej');
+  assert.ok(body.includes('auk.k.last') && body.includes('auk.k.btc') && body.includes('auk.k.ind') && body.includes('auk.k.above'), 'cztery kafle');
+  assert.ok(body.includes('<b class="pos">2.42 <span class="auk-ar pos">▲</span></b>') && body.includes('<b class="neg">57.2% <span class="auk-ar neg">▼</span></b>'), 'ostatnia aukcja: stosunek wyżej, udział niżej');
+  /* stosunek ofert: 7-latka ▲, 8-tyg. =, 10-latka ▲, sześć 4-tyg. 2.90–2.95 wobec 2.95 (=, reszta ▼); bez mediany (FRN, TIPS, 2-latka) nie liczą się → 2 z 9.
+     udział pośrednich: 7-latka ▼, 8-tyg. ▲, 10-latka bez liczby, 4-tyg. 60–65 wobec 61 (62–65 ▲) → 5 z 8 */
+  assert.ok(body.includes('auk.k.abovev{"n":"2","m":"9"}') && body.includes('auk.k.aboven{"k":"5","m":"8"}'), 'kafel „powyżej mediany” liczy tylko aukcje z liczbą i medianą: ' + body.slice(body.indexOf('auk.k.above'), body.indexOf('auk.k.above') + 160));
+  assert.ok(body.includes('auk.n{"n":"12"}') && body.includes('auk.leg') && body.includes('auk.note') && body.includes('auk.c.auc') && body.includes('class="auk-w"'), 'noty i nagłówki');
+  assert.equal(X.aukBody({at: 'x', last: []}), ''); assert.equal(X.aukBody(null), ''); assert.equal(X.aukBody({at: 'x', last: [{date: 'bad'}]}), '');
+  const nomed = X.aukBody({at: 'x', last: [row('2026-09-24', 'Bond', '30-Year', 2.39, 60)]});
+  assert.ok(nomed.includes('auk.nomed') && !nomed.includes('auk-ar') && !nomed.includes('auk.k.above'), 'bez median: noty, bez strzałek, bez kafla „powyżej mediany”');
+  const el = {hidden: false, innerHTML: 'x'}, Y = mk(q => q === '#g-aukcje' ? el : null);
+  Y.renderAuk(); assert.ok(el.hidden === true && el.innerHTML === '', 'bez danych — sekcja ukryta');
+  Y.aukApply({at: new Date().toISOString(), last: []}); assert.equal(el.hidden, true, 'plik bez aukcji — ukryta');
+  Y.aukApply(D);
+  assert.ok(el.hidden === false && el.innerHTML.includes('auk.t') && el.innerHTML.includes('auk.sub') && el.innerHTML.includes('inst.file{"t":"D(' + D.at + ')"}') && el.innerHTML.includes('eng.notsays') && el.innerHTML.includes('auk.not') && el.innerHTML.includes('eng.disclaimer'));
+  Y.aukApply(null); assert.equal(el.hidden, false, 'chwilowy błąd pobrania nie zasłania danych');
+  const Z = mk(q => q === '#g-aukcje' ? el : null);
+  Z.aukApply(Object.assign({}, D, {at: new Date(Date.now() - 50 * 864e5).toISOString()})); assert.equal(el.hidden, true, 'plik starszy niż 45 dni — ukryta');
+  Z.aukApply(Object.assign({}, D, {at: 'kiedyś'})); assert.equal(el.hidden, true, 'plik bez daty — ukryta');
+  assert.equal(X.AUK_ROWS, 12);
+});
+test('v121: aukcje — słownik w 10 językach bez nazw dostawców, sekcja po archiwum (GLOBAL), styl, plik co 60 min, wiersz Metodologii z flagą', () => {
+  const KEYS = ["auk.t", "auk.sub", "auk.c.auc", "auk.c.btc", "auk.c.ind", "auk.c.dir", "auk.c.dlr", "auk.c.yld", "auk.c.amt", "auk.k.last", "auk.k.btc", "auk.k.ind", "auk.k.above", "auk.k.abovev", "auk.k.aboven", "auk.med", "auk.nomed", "auk.reopen", "auk.tp.Bill", "auk.tp.Note", "auk.tp.Bond", "auk.tp.TIPS", "auk.tp.FRN", "auk.y", "auk.y2", "auk.w", "auk.yk.inv", "auk.yk.dm", "auk.yk.real", "auk.n", "auk.leg", "auk.note", "auk.not"];
+  const PROV = /TreasuryDirect|Treasury Direct|Fiscal ?Data|fiscaldata|Bloomberg|Reuters|EODHD|FMP/i;
+  const FOREIGN = {pl: /zagranicz/i, en: /foreign/i, de: /ausländ/i, es: /extranjer/i, fr: /étranger/i, it: /ester/i, pt: /estrangeir/i, ru: /иностран/i, zh: /海外|外国/, ja: /海外|外国/};
+  const INDIRECT = {pl: /pośredni/i, en: /indirect/i, de: /indirekt/i, es: /indirect/i, fr: /indirect/i, it: /indirett/i, pt: /indiret/i, ru: /непрям/i, zh: /间接/, ja: /間接/};
+  for (const L of ['pl', 'en', 'de', 'es', 'fr', 'it', 'pt', 'ru', 'zh', 'ja']) {
+    const tt = v96src.tFor(L);
+    assert.ok(v96src.I18N[L] && KEYS.every(k => typeof v96src.I18N[L][k] === 'string' && v96src.I18N[L][k].trim()), 'wszystkie klucze: ' + L);
+    for (const k of KEYS) assert.ok(!PROV.test(v96src.I18N[L][k]), 'dostawca: ' + L + ' ' + k);
+    for (const [k, ph] of [['auk.k.abovev', ['{n}', '{m}']], ['auk.k.aboven', ['{k}', '{m}']], ['auk.med', ['{v}']], ['auk.y', ['{n}']], ['auk.y2', ['{n}']], ['auk.w', ['{n}']], ['auk.n', ['{n}']]])
+      for (const p of ph) assert.ok(v96src.I18N[L][k].includes(p), 'symbol ' + p + ' w ' + L + ' ' + k);
+    const u = tt('auk.k.abovev', {n: '7', m: '12'}); assert.ok(u.includes('7') && u.includes('12') && !u.includes('{'), L + ' ' + u);
+    assert.ok(tt('auk.leg').includes('▲') && tt('auk.leg').includes('▼'), L + ' legenda');
+    assert.ok(!FOREIGN[L].test(tt('auk.t')) && INDIRECT[L].test(tt('auk.t')), L + ': tytuł nazywa kupujących pośrednich, nie „zagranicznych” (tego aukcja nie mierzy): ' + tt('auk.t'));
+    assert.ok(Object.keys(v96src.I18N[L]).filter(k => k.startsWith('auk.')).length === KEYS.length, L + ': te same klucze auk.* co pl');
+  }
+  assert.ok(v96src.tFor('pl')('auk.sub').includes('nie przepływ kapitału') && v96src.tFor('en')('auk.sub').includes('not a capital flow'), 'wynik aukcji ≠ przepływ');
+  assert.ok(v96src.tFor('pl')('auk.note').includes('brak nie jest zerem') && v96src.tFor('en')('auk.note').includes('a gap is not a zero'));
+  assert.ok(v96src.tFor('pl')('auk.not').includes('nie podaje krajów') && v96src.tFor('en')('auk.not').includes('does not publish countries'), '„czego nie mówią”: kupujący pośredni ≠ zagranica');
+  assert.equal(v96src.tFor('pl')('auk.y2', {n: '2'}), '2 lata'); assert.equal(v96src.tFor('pl')('auk.y', {n: '7'}), '7 lat'); assert.equal(v96src.tFor('ru')('auk.y2', {n: '3'}), '3 года');
+  assert.equal(html.split('<section class="panel pcard" id="g-aukcje" hidden></section>').length, 2, 'jedno miejsce sekcji');
+  const u = html.indexOf('<section class="panel pcard" id="g-archiwum" hidden></section>'), x = html.indexOf('<section class="panel pcard" id="g-aukcje" hidden></section>');
+  assert.ok(x > u && x < u + 600, 'zaraz po archiwum własnym (zakładka GLOBAL)');
+  assert.ok(html.includes("srvJSON('aukcje')") && html.includes('/* v121 aukcje */') && html.includes('#g-aukcje .etft{min-width:0;width:100%}'), 'plik, styl');
+  assert.ok(html.includes('const EXTRA114=') && html.includes('for(const l in EXTRA114)if(I18N[l])Object.assign(I18N[l],EXTRA114[l]);'), 'słownik EXTRA114 dołączony');
+  assert.ok(html.includes('if(!ok&&AUK.data)return;') && html.includes("/* v121: aukcje Skarbu USA; zmiana języka = nowe etykiety */"), 'odświeżanie, zmiana języka');
+  assert.equal(html.split('/* ===================== v121: AUKCJE PAPIERÓW SKARBOWYCH USA').length, 2);
+  const R = v96src.render('pl', false, null), J = R.txtJakCzytac();
+  assert.ok(J.includes('<span>aukcje papierów skarbowych USA (popyt)</span>') && R.JAK_ICO['aukcje papierów skarbowych USA (popyt)'] === 'us', 'Metodologia: wiersz z flagą USA');
+});
