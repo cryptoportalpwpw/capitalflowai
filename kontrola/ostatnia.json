@@ -1,127 +1,166 @@
 {
- "at": "2026-09-26T13:31:11+00:00",
+ "at": "2026-09-26T18:11:21+00:00",
  "strona": {
   "http": 200,
-  "bajty": 1933284,
-  "ms": 135,
+  "bajty": 2179345,
+  "ms": 335,
   "ok": true
  },
  "meta": {
-  "at": "2026-09-26T13:26:18+00:00",
+  "at": "2026-09-26T18:06:24+00:00",
   "wiek_min": 4,
-  "zrodla": 52,
+  "zrodla": 55,
   "bez_odpowiedzi": [
-   "indeksy_ix"
+   "obce_in"
   ],
   "errors": [
-   "Indeksy: FTSE: pusta odpowiedź; EODHD HTTP 404 — nieznany kod FTMIB.INDX"
+   "NSDL: Remote end closed connection without response"
   ],
-  "notes": []
+  "notes": [
+   "poprzedni ceny-krypto.json: brak na stronie (404)",
+   "Ceny krypto: SOL — budżet czasu przebiegu (50 s), ciąg dalszy w następnym przebiegu",
+   "Ceny krypto: DOGE — budżet czasu przebiegu (50 s), ciąg dalszy w następnym przebiegu",
+   "Ceny krypto: ADA — budżet czasu przebiegu (50 s), ciąg dalszy w następnym przebiegu",
+   "Ceny krypto: TRX — budżet czasu przebiegu (50 s), ciąg dalszy w następnym przebiegu",
+   "Ceny krypto: LINK — budżet czasu przebiegu (50 s), ciąg dalszy w następnym przebiegu",
+   "Ceny krypto: AVAX — budżet czasu przebiegu (50 s), ciąg dalszy w następnym przebiegu",
+   "poprzedni insider.json: brak na stronie (404)",
+   "brak SEC_CONTACT — insiderzy (zgłoszenia Form 4) wyłączeni",
+   "Stres: część put/call wyłączona (zmienna CBOE_ZGODA pusta)",
+   "poprzedni stres.json: brak na stronie (404)",
+   "poprzedni aukcje.json: brak na stronie (404)"
+  ]
  },
  "pliki": {
   "etf": {
    "http": 200,
-   "bajty": 9493,
-   "wiek_min": 47,
+   "bajty": 9491,
+   "wiek_min": 26,
    "czesci_bez_odpowiedzi": []
   },
   "trendy": {
    "http": 200,
-   "bajty": 16777,
+   "bajty": 31919,
    "wiek_min": 4,
    "czesci_bez_odpowiedzi": []
   },
   "oecd": {
    "http": 200,
    "bajty": 20527,
-   "wiek_min": 167,
+   "wiek_min": 85,
    "czesci_bez_odpowiedzi": []
   },
   "rynki": {
    "http": 200,
    "bajty": 16991,
-   "wiek_min": 47,
+   "wiek_min": 26,
    "czesci_bez_odpowiedzi": []
   },
   "dzwignia": {
    "http": 200,
-   "bajty": 5074,
-   "wiek_min": 28,
+   "bajty": 5073,
+   "wiek_min": 26,
    "czesci_bez_odpowiedzi": []
   },
   "wieloryby": {
    "http": 200,
-   "bajty": 68739,
+   "bajty": 71807,
    "wiek_min": 4,
    "czesci_bez_odpowiedzi": []
   },
   "energia": {
    "http": 200,
    "bajty": 8918,
-   "wiek_min": 47,
+   "wiek_min": 327,
    "czesci_bez_odpowiedzi": []
   },
   "usa-makro": {
    "http": 200,
    "bajty": 4852,
-   "wiek_min": 47,
+   "wiek_min": 327,
    "czesci_bez_odpowiedzi": []
   },
   "bilans-usa": {
    "http": 200,
    "bajty": 25684,
-   "wiek_min": 1128,
+   "wiek_min": 1409,
    "czesci_bez_odpowiedzi": []
   },
   "krypto": {
    "http": 200,
-   "bajty": 29333,
-   "wiek_min": 47,
+   "bajty": 29330,
+   "wiek_min": 26,
    "czesci_bez_odpowiedzi": []
   },
   "instytucje": {
    "http": 200,
    "bajty": 15212,
-   "wiek_min": 28,
+   "wiek_min": 26,
    "czesci_bez_odpowiedzi": []
   },
   "tic": {
    "http": 200,
    "bajty": 28118,
-   "wiek_min": 963,
+   "wiek_min": 1244,
    "czesci_bez_odpowiedzi": []
   },
   "cm": {
    "http": 200,
    "bajty": 8786,
-   "wiek_min": 47,
+   "wiek_min": 26,
    "czesci_bez_odpowiedzi": []
   },
   "fred": {
    "http": 200,
    "bajty": 13047,
-   "wiek_min": 28,
+   "wiek_min": 26,
    "czesci_bez_odpowiedzi": []
   },
   "cftc": {
    "http": 200,
    "bajty": 19422,
-   "wiek_min": 208,
+   "wiek_min": 128,
    "czesci_bez_odpowiedzi": []
   },
   "ceny": {
    "http": 200,
    "bajty": 105222,
-   "wiek_min": 28,
+   "wiek_min": 26,
    "czesci_bez_odpowiedzi": []
   },
   "indeksy": {
    "http": 200,
-   "bajty": 64416,
+   "bajty": 112691,
+   "wiek_min": 44,
+   "czesci_bez_odpowiedzi": []
+  },
+  "ceny-krypto": {
+   "http": 200,
+   "bajty": 100701,
    "wiek_min": 4,
    "czesci_bez_odpowiedzi": [
-    "ix"
+    "ADA",
+    "AVAX",
+    "DOGE",
+    "LINK",
+    "SOL",
+    "TRX"
    ]
+  },
+  "insider": {
+   "http": 404
+  },
+  "stres": {
+   "http": 200,
+   "bajty": 9321,
+   "wiek_min": 4,
+   "czesci_bez_odpowiedzi": []
+  },
+  "aukcje": {
+   "http": 200,
+   "bajty": 11673,
+   "wiek_min": 4,
+   "czesci_bez_odpowiedzi": []
   },
   "robots.txt": {
    "http": 200,
@@ -137,36 +176,34 @@
   }
  },
  "actions": {
-  "przebiegi_24h": 83,
+  "przebiegi_24h": 82,
   "wg_wyniku": {
-   "in_progress": 1,
    "success": 79,
-   "failure": 2,
-   "cancelled": 1
+   "failure": 3
   },
-  "ostatni": "2026-09-26T13:31:03Z",
-  "ostatnia_porazka": "2026-09-26T13:25:48Z"
+  "ostatni": "2026-09-26T18:06:14Z",
+  "ostatnia_porazka": "2026-09-26T13:37:48Z"
  },
  "swiezosc": [
   {
    "zrodlo": "rynki (kursy EBC, rentowności)",
    "status": "✅",
-   "wiek_min": 47,
-   "data": "2026-09-26T12:43:24+00:00",
+   "wiek_min": 26,
+   "data": "2026-09-26T17:44:31+00:00",
    "uwaga": ""
   },
   {
    "zrodlo": "wieloryby (salda portfeli giełd)",
    "status": "✅",
    "wiek_min": 4,
-   "data": "2026-09-26T13:26:18+00:00",
+   "data": "2026-09-26T18:06:24+00:00",
    "uwaga": ""
   },
   {
    "zrodlo": "dźwignia (giełdy pochodnych)",
    "status": "✅",
-   "wiek_min": 28,
-   "data": "2026-09-26T13:02:12+00:00",
+   "wiek_min": 26,
+   "data": "2026-09-26T17:44:31+00:00",
    "uwaga": ""
   },
   {
@@ -193,42 +230,42 @@
   {
    "zrodlo": "EIA ceny dzienne (publikowane co tydzień)",
    "status": "✅",
-   "wiek_min": 5131,
+   "wiek_min": 5411,
    "data": "2026-09-22",
    "uwaga": ""
   },
   {
    "zrodlo": "CFTC (raport tygodniowy)",
    "status": "✅",
-   "wiek_min": 5131,
+   "wiek_min": 5411,
    "data": "2026-09-22",
    "uwaga": ""
   },
   {
    "zrodlo": "FRED tygodniowe (WALCL)",
    "status": "✅",
-   "wiek_min": 3691,
+   "wiek_min": 3971,
    "data": "2026-09-23",
    "uwaga": ""
   },
   {
    "zrodlo": "TIC (miesięcznie)",
    "status": "✅",
-   "wiek_min": 81451,
+   "wiek_min": 81731,
    "data": "2026-07",
    "uwaga": ""
   },
   {
    "zrodlo": "OECD (miesięcznie)",
    "status": "✅",
-   "wiek_min": 36811,
+   "wiek_min": 37091,
    "data": "2026-08",
    "uwaga": ""
   },
   {
    "zrodlo": "BLS (miesięcznie)",
    "status": "✅",
-   "wiek_min": 36811,
+   "wiek_min": 37091,
    "data": "2026-08",
    "uwaga": ""
   }
@@ -236,21 +273,21 @@
  "zgodnosc": {
   "kapitalizacja": {
    "status": "ℹ️",
-   "dzis_pct": 4.451,
+   "dzis_pct": 4.303,
    "mediana_pct": null,
    "dni": 0,
    "opis": "historia 0 z 7 dni — bez oceny"
   },
   "ceny": {
    "bitcoin": {
-    "a": 83884.0,
-    "b": 83909.72424247176,
-    "roznica_pct": 0.031
+    "a": 84098.0,
+    "b": 84077.48899331359,
+    "roznica_pct": 0.024
    },
    "ethereum": {
-    "a": 2683.46,
-    "b": 2683.956401999054,
-    "roznica_pct": 0.018
+    "a": 2688.79,
+    "b": 2688.7219100364973,
+    "roznica_pct": 0.003
    }
   },
   "tga": {
@@ -270,12 +307,14 @@
   "wieloryby": null
  },
  "uwagi": [
-  "źródła bez odpowiedzi w ostatnim przebiegu: indeksy_ix",
-  "błąd zbieracza: Indeksy: FTSE: pusta odpowiedź; EODHD HTTP 404 — nieznany kod FTMIB.INDX",
-  "indeksy.json: części bez odpowiedzi: ix",
-  "2 nieudany przebieg automatu w 24 h (ostatni: 26.09.2026, 15:25)"
+  "źródła bez odpowiedzi w ostatnim przebiegu: obce_in",
+  "błąd zbieracza: NSDL: Remote end closed connection without response",
+  "ceny-krypto.json: części bez odpowiedzi: ADA, AVAX, DOGE, LINK, SOL, TRX",
+  "insider.json: HTTP 404 (brak pliku)"
  ],
- "bledy": [],
- "historia_n": 3,
- "wynik": "UWAGA"
+ "bledy": [
+  "3 nieudanych przebiegów automatu w 24 h"
+ ],
+ "historia_n": 4,
+ "wynik": "BŁĄD"
 }
