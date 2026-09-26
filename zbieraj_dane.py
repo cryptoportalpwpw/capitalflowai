@@ -3665,6 +3665,30 @@ TR_FP = ('fe_tech', 'fe_fin', 'fe_energy', 'fe_health', 'fe_indu', 'fe_cdisc', '
          'fe_bra', 'fe_gold', 'fe_silver')   # v93: ceny NAV (bez rynków z listy cen krajów); v94: bez obligacji — comiesięczna wypłata odsetek obniża NAV
 
 
+# v120: TRENDY — sygnały dzienne („TD” = trend dzienny; to nie są stałe Twelve Data TD_BATCH/TD_SLEEP/TD_OUTPUT z początku pliku).
+# Jedna reguła i jedne progi dla wszystkich rynków, ustalone przed policzeniem wyników; nic nie jest dostrajane do rynku.
+# Zmiana którejkolwiek stałej = TD_V + 1 i nowa data TD_SINCE (licznik „od wdrożenia” zaczyna się od nowa).
+TD_V = 1                      # wersja reguły (strona pokazuje ją w opisie metody)
+TD_SINCE = '2026-09-28'       # dzień wdrożenia: pary z datą sygnału ≥ tej daty liczymy osobno („od wdrożenia” — poza próbą)
+TD_LB = 60                    # dzień porównywany z najwyżej 60 poprzednimi dniami …
+TD_MIN = 40                   # … i najmniej 40 (mniej = „za mało historii”)
+TD_Z1 = 1.0                   # wejście „strzela”, gdy |z| ≥ 1 rozrzut …
+TD_Z2 = 2.0                   # … mocno: |z| ≥ 2 (dodatkowy punkt siły dnia)
+TD_FLOOR = 0.25               # rozrzut przepływów nie mniejszy niż 1/4 typowego dnia (małe liczby nie dają ogromnych z)
+TD_GAP = 4                    # następna sesja najwyżej 4 dni kalendarzowych po sesji sygnału (pt → pn = 3 dni; dłuższa przerwa = para pominięta)
+TD_NEFF = 100                 # przewaga wymaga co najmniej 100 dni z sygnałem (niepewność liczona na dni, nie na pary rynek–dzień)
+TD_PUB = {'ishares': 0, 'ssga': 1}   # opóźnienie publikacji w sesjach: sygnał z dnia t jest znany dopiero w sesji t + pub
+TD_PUB_SYM = {'GLD': 0, 'GLDM': 0}   # wyjątek według pliku (dostępność danych, nie próg): trusty złota SPDR publikują NAV sesję wcześniej niż
+                                     # pozostałe pliki tego wydawcy (26.09, jedno pobranie: GLD/GLDM do 25.09, reszta do 24.09) — przed TD_PUB
+TD_RULES = (('eq', 'f'), ('eq', 'p'), ('eq', 'fp'), ('bd', 'f'), ('pm', 'f'), ('pm', 'p'), ('pm', 'fp'))   # 7 linii testu, zawsze publikowane
+TD_FAM = {'bd': ('BIL', 'JNK', 'TLT', 'IEF', 'SHY', 'AGG', 'LQD', 'HYG', 'EMB'), 'pm': ('GLD', 'GLDM', 'IAU', 'SLV')}   # reszta funduszy = eq (akcje)
+TD_OB = (('in_eq', 'in', 1, None, 'INDA', 'USD'), ('tw', 'tw', 1, 5, 'EWT', 'TWD'), ('hk', 'hk', 1, 5, 'FXI', 'HKD'))
+#        (id wiersza, część pliku obce, kolumna przepływu, kolumna ≈ mln USD [None = przepływ już w USD], fundusz z ceną, waluta)
+TD_PX = ('EWC', 'ILF', 'VGK', 'KSA', 'TUR', 'EIS', 'EZA', 'ASEA', 'EWA')   # rynki tylko z ceną (zamknięcia z pliku cen, bez przepływów)
+TD_GRP = {sym: gid for gid, ms in TR_FE for sym in ms}                      # fundusz → grupa (nazwa i ikona na stronie); lista funduszy = TR_FE
+TD_EXCLUDED = ('br', 'mx', 'th', 'in_bd', 'jp', 'tr', 'cf', 'cs', 'cr', 'ix')   # poza sygnałami dziennymi — powody w opisie metody na stronie
+
+
 def _isnum(x):
     return isinstance(x, (int, float)) and not isinstance(x, bool) and x == x and abs(x) != float('inf')
 
@@ -3979,6 +4003,305 @@ def fund_group(fu, members):
     return days, vals, aum
 
 
+# v120: TRENDY — sygnały dzienne. Dla każdego rynku ostatni dzień jego danych: czy przepływ i ruch ceny odbiegają od zwykłego poziomu
+# (z = odchylenie w rozrzutach z najwyżej 60 poprzednich dni), klasa dnia (f / p / fp / x / none), kierunek z założenia = kontynuacja,
+# oraz test na całej historii pliku: jak często po takim dniu następna sesja miała ten sam znak. To opis danych i ich historii —
+# nie prognoza i nie rekomendacja. Brak w danych = None, nigdy zero. Wszystko z plików tego przebiegu, bez zapytań do sieci.
+
+def _td_z(vals, i, demean=True):
+    """Wartość o indeksie i w rozrzutach najwyżej TD_LB poprzednich liczb (None pomijany — nigdy nie zastępowany zerem); mniej niż TD_MIN → None.
+    Przepływy (demean=True): (v − średnia) / max(rozrzut, TD_FLOOR × typowy |dzień|); tło z samych zer: 0 albo ±TD_Z2 (niżej). Zwroty
+    (demean=False): r / pierwiastek średniego r² (średni dzienny zwrot ≈ 0 — odejmowanie go dodałoby tylko szum); same zerowe zwroty w tle =
+    cena stoi (plik bez aktualizacji) → brak porównania, None. Uogólnienie trend_day_z na dowolny indeks; tamta bez zmian."""
+    if not vals or i < 0 or i >= len(vals) or not _isnum(vals[i]):
+        return None
+    prev = [x for x in vals[max(0, i - TD_LB):i] if _isnum(x)]
+    if len(prev) < TD_MIN:
+        return None
+    if demean:
+        m = _mean(prev)
+        sd = max(_sd(prev), TD_FLOOR * _mean([abs(x) for x in prev]))
+        if sd > 0:
+            return (vals[i] - m) / sd
+        # Rozrzut 0 zdarza się tylko wtedy, gdy wszystkie poprzednie dni to dokładnie 0 (liczba jednostek funduszu bez zmian przez tygodnie).
+        # Prawdziwa liczba dnia nie może wtedy wyjść jako brak (strona napisałaby „brak danych”): dzień taki jak zwykle → 0; każdy inny jest
+        # „dużo większy niż zwykle” → ±TD_Z2 (znak = kierunek). Tło nadal bez dnia t; jedna reguła dla wszystkich rynków.
+        return 0.0 if vals[i] == m else (TD_Z2 if vals[i] > m else -TD_Z2)
+    rms = (sum(x * x for x in prev) / len(prev)) ** 0.5
+    return vals[i] / rms if rms > 0 else None
+
+
+def _td_class(zf, zp, bd=False):
+    """Klasa dnia z odchyleń przepływu (zf) i ceny (zp) → (reguła, kierunek, siła). Reguły rozłączne: fp (oba w tę samą stronę),
+    f (tylko przepływ), p (tylko cena), x (sprzeczne — bez kierunku), none. Kierunek z założenia = kontynuacja (napływ / wzrost → +1).
+    Obligacje (bd): cena nie wchodzi do reguły (wypłata odsetek obniża NAV — sp zawsze 0). Siła 0–3 = [wejście strzela] + [drugie zgodne,
+    |z| ≥ 1] + [największe |z| wchodzące do reguły ≥ 2] — opisuje dzień, nigdy nie jest testowana. Jedne progi dla wszystkich rynków."""
+    sf = 0 if zf is None or abs(zf) < TD_Z1 else (1 if zf > 0 else -1)
+    sp = 0 if bd or zp is None or abs(zp) < TD_Z1 else (1 if zp > 0 else -1)
+    if sf and sp == sf:
+        rule, d = 'fp', sf
+    elif sf and not sp:
+        rule, d = 'f', sf
+    elif sp and not sf:
+        rule, d = 'p', sp
+    elif sf and sp == -sf:
+        rule, d = 'x', 0
+    else:
+        rule, d = 'none', 0
+    if not d:
+        return rule, 0, 0
+    zs = [abs(zf) if zf is not None else 0.0] + ([] if bd else [abs(zp) if zp is not None else 0.0])
+    return rule, d, 1 + int(rule == 'fp') + int(max(zs) >= TD_Z2)
+
+
+def _td_next(date):
+    """Następna sesja: pierwszy dzień pon–pt po dniu `date` (świąt w USA nie modelujemy — karta może stać się „nieaktualna” o sesję za wcześnie)."""
+    d = _d(date) + datetime.timedelta(days=1)
+    while d.weekday() >= 5:
+        d += datetime.timedelta(days=1)
+    return d
+
+
+def _td_live(date, now_ny):
+    """Karta aktualna do 16:15 czasu Nowego Jorku w dniu następnej sesji (ten sam zegar co _drop_open_session); później „nieaktualna”."""
+    nx = _td_next(date)
+    now = now_ny.replace(tzinfo=None) if getattr(now_ny, 'tzinfo', None) else now_ny
+    return now < datetime.datetime(nx.year, nx.month, nx.day, 16, 15)
+
+
+def _td_month_first(dates, i):
+    """Czy wiersz i jest pierwszym wierszem swojego miesiąca kalendarzowego (obligacje: sesja wypłaty odsetek obniża NAV — nie jest wynikiem)."""
+    return i <= 0 or str(dates[i])[:7] != str(dates[i - 1])[:7]
+
+
+def _td_pairs(dates, flow, ret, pub=0, bd=False):
+    """Test wstecz jednego rynku → [(data sygnału, reguła, kierunek, trafienie)]. Dla każdego dnia t: z liczone tylko z danych ≤ t;
+    sygnał jest znany w sesji s = t + pub; wynik = zwrot sesji s+1 (ret[s+1], w %), wymagany: nie więcej niż TD_GAP dni po sesji s (i sesja s
+    nie dalej niż TD_GAP dni od dnia t — przy pub > 0 luka w pliku nie może przesunąć sygnału o tydzień), bez
+    podziału jednostek (zwrot None), różny od zera (dzień bez zmiany ceny to ani trafienie, ani pudło), u obligacji nie pierwszy wiersz
+    miesiąca. Trafienie = ten sam znak co kierunek. Dni sprzeczne (x) zwracane z trafieniem None — nigdy nie są parą."""
+    out = []
+    n = len(dates)
+    for t in range(n):
+        zf = _td_z(flow, t) if flow else None
+        zp = _td_z(ret, t, demean=False) if ret else None
+        if zf is None and zp is None:
+            continue
+        rule, d, _ = _td_class(zf, zp, bd)
+        if rule == 'none':
+            continue
+        if rule == 'x':
+            out.append((dates[t], 'x', 0, None))
+            continue
+        s = t + pub
+        if not ret or s + 1 >= n:
+            continue
+        r = ret[s + 1]
+        if r is None or r == 0:
+            continue
+        a, b = _d(dates[s]), _d(dates[s + 1])
+        if not a or not b or (b - a).days > TD_GAP or (a - _d(dates[t])).days > TD_GAP:
+            continue
+        if bd and _td_month_first(dates, s + 1):
+            continue
+        out.append((dates[t], rule, d, 1 if (r > 0) == (d > 0) else 0))
+    return out
+
+
+def _td_pool(lines):
+    """Pary wszystkich rynków rodziny razem → 7 linii (fam, reguła) z TD_RULES, zawsze wszystkie. lines: {(fam, reguła): [(data, trafienie, id)]}.
+    Zakres 95% (Wilson) liczony na dni z sygnałem (rynki poruszają się razem), nie na pary. Połowy historii dzielone po datach sygnału.
+    lk/ln/ldays = pary z datą sygnału ≥ TD_SINCE (poza próbą). Ocena: short (< TD_NEFF dni), edge (dolna granica > 50 i obie połowy > 50),
+    anti (górna granica < 50 i obie połowy < 50 — informacja, nigdy odwrócenie strony), inaczej none. Brak liczby = None, nigdy zero."""
+    def pct(hs):
+        return round(100 * sum(hs) / len(hs), 1) if hs else None
+    out = []
+    for fam, rule in TD_RULES:
+        pr = sorted((lines or {}).get((fam, rule)) or [], key=lambda x: x[0])
+        n = len(pr); k = sum(h for _, h, _ in pr)
+        ds = sorted({d for d, _, _ in pr}); days = len(ds)
+        lo, hi = wilson(k, n, n_eff=days) if n else (None, None)
+        mid = ds[days // 2] if days > 1 else None
+        p1 = pct([h for d, h, _ in pr if mid and d < mid]); p2 = pct([h for d, h, _ in pr if mid and d >= mid])
+        late = [(d, h) for d, h, _ in pr if d >= TD_SINCE]
+        if days < TD_NEFF:
+            vd = 'short'
+        elif lo is not None and lo > 50 and p1 is not None and p1 > 50 and p2 is not None and p2 > 50:
+            vd = 'edge'
+        elif hi is not None and hi < 50 and p1 is not None and p1 < 50 and p2 is not None and p2 < 50:
+            vd = 'anti'
+        else:
+            vd = 'none'
+        out.append({'fam': fam, 'rule': rule, 'k': k, 'n': n, 'days': days, 'from': ds[0] if ds else None, 'to': ds[-1] if ds else None,
+                    'p': pct([h for _, h, _ in pr]), 'ci': [lo, hi], 'h1': p1, 'h2': p2, 'lk': sum(h for _, h in late), 'ln': len(late),
+                    'ldays': len({d for d, _ in late}), 'm': len({i for _, _, i in pr}), 'need': max(0, TD_NEFF - days), 'vd': vd})
+    return out
+
+
+def _td_rules():
+    """Słownik `dr` w trendy.json: stałe reguły i lista rynków poza sygnałami dziennymi (strona opisuje powody w metodzie)."""
+    return {'lb': TD_LB, 'min': TD_MIN, 'z1': TD_Z1, 'z2': TD_Z2, 'floor': TD_FLOOR, 'gap': TD_GAP, 'neff': TD_NEFF, 'pub': dict(TD_PUB),
+            'pubsym': dict(TD_PUB_SYM), 'excluded': list(TD_EXCLUDED)}      # pubsym: wyjątki według pliku, sprawdzane przed pub (wydawca)
+
+
+def _td_fund_px(h):
+    """Poprawne wiersze historii funduszu → (daty, NAV, zwroty w %): zwrot tylko między kolejnymi wierszami bez podziału jednostek
+    (fund_split ≠ 1 → None; poziomu nie trzeba korygować, bo zwroty liczymy wyłącznie dzień do dnia)."""
+    dates = [r[0] for r in h]; px = [r[1] for r in h]
+    ret = [None] + [(b[1] / a[1] - 1) * 100 if fund_split(a, b) == 1 else None for a, b in zip(h, h[1:])]
+    return dates, px, ret
+
+
+def _td_series_fund(fu, sym):
+    """Fundusz ETF → seria dzienna: daty = wiersze NAV, przepływ dnia z fund_flows (mln USD; skok bez wyjaśnienia = brak), zwrot NAV.
+    Rodzina z TD_FAM (reszta = eq), opóźnienie publikacji: najpierw wyjątek pliku z TD_PUB_SYM, potem TD_PUB według wydawcy.
+    Mniej niż 2 wiersze — bez serii."""
+    p = fu.get(sym) if isinstance(fu, dict) else None
+    h = _fund_rows(p.get('h') if isinstance(p, dict) else None)
+    if len(h) < 2:
+        return None
+    dates, px, ret = _td_fund_px(h)
+    fl = fund_flows(h)
+    flow = [fl.get(d) for d in dates]
+    iss = p.get('iss') if isinstance(p.get('iss'), str) else None
+    return {'id': sym, 'fam': next((f for f, ms in TD_FAM.items() if sym in ms), 'eq'), 'grp': TD_GRP.get(sym), 'iss': iss,
+            'pub': TD_PUB_SYM.get(sym, TD_PUB.get(iss, 0)), 'sym': sym, 'cur': 'USD', 'dates': dates, 'flow': flow, 'fu': flow, 'ret': ret}
+
+
+def _td_series_ob(ob, spec, fu):
+    """Wiersz kraju (Indie akcje, Tajwan, Hongkong) → seria: daty = dni przepływu (tw/hk: pełny kalendarz sesji, dzień bez wiersza = brak),
+    przepływ w walucie kraju (fu = kolumna ≈ mln USD; Indie już w USD), cena = NAV funduszu USA z tego samego dnia ISO (brak NAV = brak,
+    nigdy zero); zwrot tylko między kolejnymi dniami serii z NAV i bez podziału jednostek między nimi. Bez pliku funduszu — bez wiersza.
+    nopool: pary reguły „p” (sama cena) nie idą do linii zbiorczych — wejście ceny to NAV tego samego funduszu, który ma własny wiersz
+    (ten sam dzień, ta sama sesja wyniku liczyłyby się dwa razy); własne k/n karty liczone jak zwykle."""
+    iid, part, col, ucol, sym, cur = spec
+    if not isinstance(ob, dict) or not isinstance(ob.get(part), dict):
+        return None
+    p = fu.get(sym) if isinstance(fu, dict) else None
+    h = _fund_rows(p.get('h') if isinstance(p, dict) else None)
+    if len(h) < 2:
+        return None
+    cols = (_tr_sessions if part in ('tw', 'hk') else _tr_cols)(ob[part], *([col, ucol] if ucol else [col]))
+    dates, flow = cols[0], cols[1]
+    if not dates:
+        return None
+    fuv = cols[2] if ucol else flow
+    nav = {str(r[0])[:10]: r[1] for r in h}
+    splits = [b[0] for a, b in zip(h, h[1:]) if fund_split(a, b) != 1]
+    px = [nav.get(str(d)[:10]) for d in dates]
+    ret = [None]
+    for i in range(1, len(dates)):
+        ok = px[i] is not None and px[i - 1] is not None and not any(dates[i - 1] < s <= dates[i] for s in splits)
+        ret.append((px[i] / px[i - 1] - 1) * 100 if ok else None)
+    return {'id': iid, 'fam': 'eq', 'grp': None, 'iss': None, 'pub': 0, 'sym': sym, 'cur': cur, 'dates': dates, 'flow': flow, 'fu': fuv, 'ret': ret,
+            'nopool': ('p',)}
+
+
+def _td_series_px(ce, sym):
+    """Rynek tylko z ceną (zamknięcia z pliku cen) → seria bez przepływów: f / zf / fu = brak (None), zwrot między kolejnymi wierszami."""
+    q = (ce.get('q') or {}).get(sym) if isinstance(ce, dict) else None
+    d = [r for r in ((q or {}).get('d') or []) if isinstance(r, list) and len(r) > 1 and _isnum(r[1]) and r[1] > 0 and _d(r[0])]
+    if len(d) < 2:
+        return None
+    dates = [str(r[0])[:10] for r in d]; px = [r[1] for r in d]
+    ret = [None] + [(px[i] / px[i - 1] - 1) * 100 for i in range(1, len(px))]
+    return {'id': sym, 'fam': 'eq', 'grp': None, 'iss': None, 'pub': 0, 'sym': sym, 'cur': None, 'dates': dates, 'flow': None, 'fu': None, 'ret': ret}
+
+
+def _td_row(s, vd_by, own, now_ny, today):
+    """Karta jednego rynku z ostatniego dnia jego serii. Stany: buy/sell (kierunek, aktualna, linia z przewagą), obs (kierunek, aktualna,
+    bez przewagi — szara karta po stronie kierunku; ocena „anti” nigdy nie odwraca strony), x (sprzeczne), quiet (spokojny dzień),
+    stale (po 16:15 NY następnej sesji — reguła i siła nadal policzone do opisu), short (żadne wejście reguły nie ma 40 dni historii),
+    nodata (brak liczb z tego dnia). Wszystkie brakujące liczby = None, nigdy zero; z i zwrot na 2 miejsca, kwoty na 1."""
+    i = len(s['dates']) - 1
+    date = s['dates'][i]
+    bd = s['fam'] == 'bd'
+    flow, ret = s['flow'], s['ret']
+    zf = _td_z(flow, i) if flow else None
+    zp = _td_z(ret, i, demean=False) if ret else None
+    rule, d, sg = _td_class(zf, zp, bd)
+    inputs = [v for v in ([flow] if bd else [flow, ret]) if v]              # wejścia reguły (u obligacji cena nie wchodzi)
+    has_now = any(_isnum(v[i]) for v in inputs)
+    has_hist = any(sum(1 for x in v[max(0, i - TD_LB):i] if _isnum(x)) >= TD_MIN for v in inputs)
+    live = _td_live(date, now_ny)
+    signal = rule in ('f', 'p', 'fp')
+    vd = vd_by.get((s['fam'], rule)) if signal else None
+    if not has_now:
+        st = 'nodata'
+    elif not has_hist:
+        st = 'short'
+    elif not live:
+        st = 'stale'
+    elif rule == 'x':
+        st = 'x'
+    elif rule == 'none':
+        st = 'quiet'
+    else:
+        st = ('buy' if d > 0 else 'sell') if vd == 'edge' else 'obs'
+    side = ('buy' if d > 0 else 'sell') if st in ('buy', 'sell', 'obs') else 'none'
+    o = own.get((s['id'], rule), (0, 0)) if signal else (None, None)
+
+    def rnd(x, k):
+        return round(x, k) if _isnum(x) else None
+    return {'id': s['id'], 'fam': s['fam'], 'grp': s['grp'], 'iss': s['iss'], 'pub': s['pub'], 'sym': s['sym'], 'date': date,
+            'nx': _td_next(date).isoformat(), 'live': live, 'age': (today - _d(date)).days,
+            'f': rnd(flow[i] if flow else None, 1), 'cur': s['cur'], 'fu': rnd(s['fu'][i] if s['fu'] else None, 1), 'zf': rnd(zf, 2),
+            'r': rnd(ret[i] if ret else None, 2), 'zp': rnd(zp, 2), 'rule': rule, 'dir': d, 'side': side, 'str': sg, 'st': st, 'vd': vd,
+            'ik': o[0], 'in': o[1]}
+
+
+def build_daily(S):
+    """Sygnały dzienne → (d, bd): d = karty rynków (fundusze z TR_FE, wiersze krajów z TD_OB, rynki tylko z ceną z TD_PX — lista zamknięta,
+    wyniki niczego nie dodają ani nie usuwają; rynek bez serii cen jest pomijany, nie pokazywany jako karta z samymi brakami),
+    bd = 7 linii testu wstecz (zawsze wszystkie, także z n = 0). Zepsuta seria jednego rynku (budowa, test wstecz albo karta) → uwaga
+    w meta, bez jego karty; reszta zostaje. Gdy nie powstała żadna karta (brak serii wejściowych albo wszystkie zepsute) → (None, None):
+    blok niepoliczony, strona go ukrywa — pusta lista znaczyłaby „dziś zero rynków”, a to nieprawda. Nie zmienia S.
+    Zegary: _ny_now (aktualność karty), _now_utc (wiek danych) — w testach podmieniane."""
+    S = S if isinstance(S, dict) else {}
+    fu = (S.get('fundusze') or {}).get('f') if isinstance(S.get('fundusze'), dict) else None
+    ob = S.get('obce') if isinstance(S.get('obce'), dict) else {}
+    ce = S.get('ceny') if isinstance(S.get('ceny'), dict) else {}
+    todo = [(sym, lambda sym=sym: _td_series_fund(fu, sym)) for sym in TD_GRP] + \
+           [(sp[0], lambda sp=sp: _td_series_ob(ob, sp, fu)) for sp in TD_OB] + \
+           [(sym, lambda sym=sym: _td_series_px(ce, sym)) for sym in TD_PX]
+    series = []
+    for name, fn in todo:
+        try:
+            s = fn()
+            if s:
+                series.append(s)
+        except Exception as e:
+            META['notes'].append(mask(f'trendy dziennie {name}: {e}'))
+    if not series:
+        return None, None                                   # żadnej serii wejściowej — blok niepoliczony (None), nie „zero rynków” ([])
+    lines = {key: [] for key in TD_RULES}
+    own = {}
+    good = []
+    for s in series:
+        try:
+            pr = _td_pairs(s['dates'], s['flow'], s['ret'], s['pub'], s['fam'] == 'bd')
+        except Exception as e:                              # zepsuta seria jednego rynku: uwaga, bez jego par i karty; reszta zostaje
+            META['notes'].append(mask(f"trendy dziennie {s['id']}: {e}"))
+            continue
+        good.append(s)
+        for dt, rule, d, hit in pr:
+            if hit is None:
+                continue
+            if (s['fam'], rule) in lines and rule not in s.get('nopool', ()):
+                lines[(s['fam'], rule)].append((dt, hit, s['id']))
+            o = own.setdefault((s['id'], rule), [0, 0]); o[0] += hit; o[1] += 1
+    bd = _td_pool(lines)
+    vd_by = {(b['fam'], b['rule']): b['vd'] for b in bd}
+    now_ny, today = _ny_now(), _now_utc().date()
+    rows = []
+    for s in good:
+        try:
+            rows.append(_td_row(s, vd_by, own, now_ny, today))
+        except Exception as e:                              # zepsuty ostatni dzień jednego rynku: uwaga, bez jego karty
+            META['notes'].append(mask(f"trendy dziennie {s['id']}: {e}"))
+    return (rows, bd) if rows else (None, None)
+
+
 def _tr_try(name, fn, out):
     """Jedno źródło TRENDÓW — błąd jednego źródła nie usuwa pozostałych (uwaga w meta zamiast pustej zakładki)."""
     try:
@@ -4286,10 +4609,16 @@ def build_trendy(S):
         nw = len(pp['weeks'])            # rynki są ze sobą powiązane: niepewność liczona na tygodnie, nie na pary rynek-tydzień
         base.append({'id': 'px', 'kind': 'price', 'k': pp['k'], 'n': pp['n'], 'weeks': nw, 'from': pp['from'].isoformat(),
                      'to': pp['to'].isoformat(), 'ci': list(wilson(pp['k'], pp['n'], n_eff=nw))})
+    daily = {'dv': TD_V, 'dsince': TD_SINCE, 'dr': _td_rules(), 'd': None, 'bd': None}   # v120: sygnały dzienne (ten sam przebieg, ten sam `at`)
+    try:
+        daily['d'], daily['bd'] = build_daily(S)
+    except Exception as e:
+        daily['d'] = daily['bd'] = None     # awaria to nie „zero rynków”: null w pliku (strona ukrywa blok), nigdy pusta lista
+        META['notes'].append(mask(f'trendy dziennie: {e}'))
     return {'at': NOW, 'v': 1, 'src': 'CapitalFlowAI — obliczenia z plików tej strony (fundusze, obce, meksyk, instytucje, kursy, etf, cm, krypto, cftc, surowce, ceny)',
             'rules': {'base_min': TR_BASE_MIN, 'base_max': TR_BASE_MAX, 'dir': TR_DIR, 'all': TR_ALL, 'floor': TR_FLOOR, 'strong': TR_STRONG,
                       'exc': TR_EXC, 'day_z': TR_DAY_Z, 'span': TR_SPAN, 'px_min': TR_PX_MIN, 'cr_typ': TR_CR_TYP},
-            'f': flows, 'p': prices, 'b': base}
+            'f': flows, 'p': prices, 'b': base, **daily}
 
 
 # ===================== v97: DANE RZĄDU USA (domena publiczna) — EIA, BLS, BEA =====================

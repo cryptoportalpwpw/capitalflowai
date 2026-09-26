@@ -3466,6 +3466,392 @@ class FunduszeV90(unittest.TestCase):
         self.assertEqual([b['id'] for b in out['b']], ['fe'])
 
 
+class TrendyDailyV120(unittest.TestCase):
+    """v120: sygnały dzienne — jedna reguła dla wszystkich rynków, test wstecz na całej historii pliku, brak nie jest zerem, bez sieci."""
+
+    NOW = datetime.datetime(2026, 9, 26, 10, 0, tzinfo=datetime.timezone.utc)   # sobota rano (UTC) — wiek danych
+    NY = datetime.datetime(2026, 9, 26, 6, 0)                                    # sobota rano w Nowym Jorku (bez strefy, jak zegar w teście)
+    STATES = ('buy', 'sell', 'obs', 'x', 'quiet', 'stale', 'short', 'nodata')
+
+    def setUp(self):
+        ps = [mock.patch.object(zd, '_now_utc', return_value=self.NOW), mock.patch.object(zd, '_ny_now', return_value=self.NY),
+              mock.patch.object(zd.urllib.request, 'urlopen', side_effect=AssertionError('sieć w teście'))]
+        for p in ps:
+            p.start(); self.addCleanup(p.stop)
+        zd.META['notes'].clear()
+
+    @staticmethod
+    def days(n, end='2026-09-25'):
+        return [d.isoformat() for d in FunduszeV90.days(n, end)]
+
+    @classmethod
+    def fund(cls, n=80, end='2026-09-25', last_du=None, last_ret=0.1, iss='ishares'):
+        """Historia funduszu: NAV na przemian −0,5 % / +0,5 % (ostatni dzień: last_ret %), jednostki rosną o 1200 / 800 na przemian
+        (przepływ ≈ 0,1 mln, wahania poniżej progu dzięki dolnej granicy rozrzutu — zwykły dzień jest „spokojny”); ostatni dzień: zmiana
+        jednostek last_du (50 000 = przepływ ≈ 5 mln, wielokrotnie ponad progiem). Seria ±stała leżałaby dokładnie na progu |z| = 1."""
+        h, p, u = [], 100.0, 1000000
+        for i, d in enumerate(cls.days(n, end)):
+            if i:
+                p = p * (1 + (last_ret if i == n - 1 else (0.5 if i % 2 else -0.5)) / 100)
+                u += (1200 if i % 2 else 800) if not (i == n - 1 and last_du is not None) else last_du
+            h.append([d, round(p, 6), u])
+        return {'iss': iss, 'h': h}
+
+    @classmethod
+    def closes(cls, n=70, last_ret=0.1):
+        """Zamknięcia rynku tylko z ceną: +0,4 %, +0,4 %, −0,8 % w kółko (ruch ceny strzela co trzeci dzień); ostatni dzień: last_ret %."""
+        out, p = [], 50.0
+        for i, d in enumerate(cls.days(n)):
+            if i:
+                p = p * (1 + (last_ret if i == n - 1 else (-0.8 if i % 3 == 0 else 0.4)) / 100)
+            out.append([d, round(p, 4)])
+        return out
+
+    def test_z_window(self):
+        v = [float(x) for x in range(100)]
+        prev = v[10:70]
+        self.assertAlmostEqual(zd._td_z(v, 70), (70 - zd._mean(prev)) / max(zd._sd(prev), 0.25 * zd._mean(prev)), places=9, msg='dokładnie 60 poprzednich')
+        v[70] = 1000.0
+        self.assertAlmostEqual(zd._td_z(v, 70), (1000 - zd._mean(prev)) / zd._sd(prev), places=9, msg='wartość i nie wchodzi do średniej ani rozrzutu')
+        v[50] = None
+        prev59 = [x for x in v[10:70] if x is not None]
+        self.assertAlmostEqual(zd._td_z(v, 70), (1000 - zd._mean(prev59)) / zd._sd(prev59), places=9, msg='None pominięty, nie zero')
+        self.assertIsNone(zd._td_z([1.0, 2.0] * 20 + [None] * 21 + [5.0], 61), 'tylko 39 liczb w oknie 60 — za mało')
+        self.assertIsNotNone(zd._td_z([1.0, 2.0] * 20 + [None] * 20 + [5.0], 60), '40 liczb — wystarczy')
+        self.assertIsNone(zd._td_z(v, 0)); self.assertIsNone(zd._td_z(v, 5)); self.assertIsNone(zd._td_z([None] * 70, 69)); self.assertIsNone(zd._td_z([], 0))
+        self.assertEqual(zd._td_z([0.0] * 60 + [1.0], 60), 2.0, 'tło z samych zer, dziś napływ: „dużo większy niż zwykle” (+TD_Z2), nie brak')
+        self.assertEqual(zd._td_z([0.0] * 60 + [-0.3], 60), -2.0, 'tło z samych zer, dziś odpływ: −TD_Z2')
+        z0 = zd._td_z([0.0] * 60 + [0.0], 60)
+        self.assertEqual(json.dumps(z0), '0.0', 'zero po samych zerach: z = 0 (spokojny dzień), nie brak i nie −0')
+        self.assertEqual(zd._td_z([0.0] * 30 + [None] * 10 + [0.0] * 20 + [5.0], 60), 2.0, 'None pominięty — 50 zer wystarcza')
+        self.assertIsNone(zd._td_z([0.0] * 39 + [None] * 21 + [5.0], 60), 'tylko 39 zer w oknie — za mało historii')
+        self.assertIsNone(zd._td_z([0.0] * 60 + [None], 60), 'dziś brak — brak, nie zero')
+        self.assertEqual(zd._td_z([7.0] * 60 + [7.0], 60), 0.0, 'stała różna od zera: dolna granica rozrzutu, z = 0')
+        self.assertAlmostEqual(zd._td_z([5.0] * 60 + [-5.0], 60), -10 / (0.25 * 5), places=9, msg='stała historia: rozrzut = 1/4 typowego dnia')
+        self.assertLessEqual(abs(zd._td_z([5.0] * 60 + [-5.0], 60)), 4 / zd.TD_FLOOR)
+        self.assertAlmostEqual(zd._td_z([1.0] * 60 + [1.0], 60, demean=False), 1.0, places=9, msg='zwroty bez odejmowania średniej')
+        self.assertAlmostEqual(zd._td_z([0.5, -0.5] * 30 + [1.0], 60, demean=False), 2.0, places=9)
+        self.assertIsNone(zd._td_z([0.0] * 60 + [1.0], 60, demean=False))
+
+    def test_split_day(self):
+        h = self.fund(80)['h']
+        for r in h[50:]:
+            r[1], r[2] = r[1] / 2, r[2] * 2                                # podział 2:1 od wiersza 50
+        rows = zd._fund_rows(h)
+        self.assertEqual(len(rows), 80)
+        dates, px, ret = zd._td_fund_px(rows)
+        self.assertIsNone(ret[50], 'dzień podziału — zwrot to brak, nie −50 %')
+        self.assertAlmostEqual(ret[49], (h[49][1] / h[48][1] - 1) * 100, places=9); self.assertAlmostEqual(ret[51], (h[51][1] / h[50][1] - 1) * 100, places=9)
+        self.assertEqual(sum(1 for x in ret if x is None), 2, 'tylko pierwszy wiersz i dzień podziału')
+        flow = [1.0 + 0.1 * ((-1) ** i) for i in range(80)]                # spokojne dni (1 ± 0,1: z = ±0,4 dzięki dolnej granicy rozrzutu)
+        flow[49] = 50.0                                                     # sygnał w dniu 49 → wynik = zwrot dnia 50 (podział) → para pominięta
+        retm = [x if i in (49, 50, 51) else None for i, x in enumerate(ret)]   # cena nie strzela (< 40 liczb), zwroty wokół podziału prawdziwe
+        self.assertEqual(zd._td_pairs(dates, flow, retm, 0), [], 'para przez dzień podziału pominięta')
+        flow[49], flow[48] = 1.1, 50.0
+        self.assertEqual(zd._td_pairs(dates, flow, retm, 0), [(dates[48], 'f', 1, 1)], 'dzień przed: wynik = zwrot dnia 49 (+0,5 %), para jest')
+
+    def test_pairs_outcome(self):
+        ds = self.days(50)
+        flow = [1.0 + 0.1 * ((-1) ** i) for i in range(50)]                # 1 ± 0,1: zwykły dzień z = ±0,4 (spokojny)
+        flow[45] = 100.0
+        ret = [None] * 50                                                   # cena: za mało liczb — nigdy nie strzela
+        ret[46] = -1.0; ret[47] = 1.0
+        self.assertEqual(zd._td_pairs(ds, flow, ret, 0), [(ds[45], 'f', 1, 0)], 'pub 0: wynik z sesji t+1 (pudło)')
+        self.assertEqual(zd._td_pairs(ds, flow, ret, 1), [(ds[45], 'f', 1, 1)], 'pub 1: sygnał znany w sesji t+1, wynik z t+2 (trafienie)')
+        ds3 = ds[:46] + [(datetime.date.fromisoformat(x) + datetime.timedelta(days=7)).isoformat() for x in ds[46:]]
+        self.assertEqual(zd._td_pairs(ds3, flow, ret, 1), [], 'pub 1: luka 8 dni między dniem sygnału a sesją publikacji — para pominięta')
+        flow[45] = -100.0
+        self.assertEqual(zd._td_pairs(ds, flow, ret, 0), [(ds[45], 'f', -1, 1)], 'kierunek −1: spadek = trafienie')
+        ret[46] = 0.0
+        self.assertEqual(zd._td_pairs(ds, flow, ret, 0), [], 'dzień bez zmiany ceny — ani trafienie, ani pudło')
+        ret[46] = -1.0
+        ds2 = list(ds); ds2[46] = (datetime.date.fromisoformat(ds[45]) + datetime.timedelta(days=6)).isoformat()
+        self.assertEqual(zd._td_pairs(ds2, flow, ret, 0), [], 'przerwa 6 dni — para pominięta')
+        fri = self.days(46, '2026-09-18') + ['2026-09-21', '2026-09-22', '2026-09-23', '2026-09-24']
+        self.assertEqual(zd._td_pairs(fri, flow, ret, 0), [(fri[45], 'f', -1, 1)], 'piątek → poniedziałek (3 dni) zostaje')
+        self.assertEqual(zd._td_pairs(ds, flow, [None] * 50, 0), [], 'bez cen — bez par, nie zero')
+        flow2 = [1.0 + 0.1 * ((-1) ** i) for i in range(50)]; flow2[45] = 100.0
+        ret2 = [None] * 5 + [0.5 * ((-1) ** i) for i in range(40)] + [-5.0] + [None] * 4   # 40 liczb przed dniem 45; potem brak
+        self.assertEqual(zd._td_pairs(ds, flow2, ret2, 0), [(ds[45], 'x', 0, None)], 'dzień sprzeczny (napływ, cena w dół): zwracany bez trafienia')
+
+    def test_bonds(self):
+        ds = [d.isoformat() for d in (datetime.date(2026, 6, 1) + datetime.timedelta(days=i) for i in range(120)) if d.weekday() < 5]
+        first = next(i for i in range(60, len(ds)) if ds[i][:7] != ds[i - 1][:7])   # pierwszy wiersz miesiąca po 60 dniach
+        self.assertTrue(zd._td_month_first(ds, first)); self.assertFalse(zd._td_month_first(ds, first + 1)); self.assertTrue(zd._td_month_first(ds, 0))
+        flow = [1.0 + 0.1 * ((-1) ** i) for i in range(len(ds))]          # spokojne dni
+        flow[first - 1] = 50.0; flow[first] = 50.0
+        ret = [0.6 if i % 2 else -0.2 for i in range(len(ds))]             # cena strzela co drugi dzień — u obligacji nie wchodzi do reguły
+        ret[first] = -2.0; ret[first + 1] = 2.0
+        pr = zd._td_pairs(ds, flow, ret, 0, bd=True)
+        self.assertEqual(pr, [(ds[first], 'f', 1, 1)], 'obligacje: wynik z pierwszej sesji miesiąca pominięty; cena nie wchodzi do reguły')
+        self.assertTrue(all(p[1] == 'p' for p in zd._td_pairs(ds[:first - 1], flow[:first - 1], ret[:first - 1], 0, bd=False)), 'akcje: ta sama seria dałaby regułę p')
+        self.assertEqual(zd._td_class(0.2, 3.0, bd=True), ('none', 0, 0), 'obligacje: sama cena nie daje reguły')
+        self.assertEqual(zd._td_class(1.5, -3.0, bd=True), ('f', 1, 1), 'obligacje: cena nie robi też dnia sprzecznego')
+        self.assertEqual(zd._td_class(2.5, 3.0, bd=True), ('f', 1, 2))
+        fu = {'TLT': self.fund(80, last_du=50000, last_ret=3.0)}
+        d, bd = zd.build_daily({'fundusze': {'f': fu}})
+        r = d[0]
+        self.assertEqual((r['id'], r['fam'], r['rule'], r['dir'], r['pub']), ('TLT', 'bd', 'f', 1, 0))
+        self.assertTrue(zd._isnum(r['zp']) and r['zp'] > 1, 'zp policzone i pokazane, choć nie wchodzi do reguły')
+
+    def test_class_table(self):
+        T = {(-1.5, -1.5): ('fp', -1, 2), (-1.5, 0.0): ('f', -1, 1), (-1.5, 1.5): ('x', 0, 0),
+             (0.0, -1.5): ('p', -1, 1), (0.0, 0.0): ('none', 0, 0), (0.0, 1.5): ('p', 1, 1),
+             (1.5, -1.5): ('x', 0, 0), (1.5, 0.0): ('f', 1, 1), (1.5, 1.5): ('fp', 1, 2)}
+        for (zf, zp), exp in T.items():
+            self.assertEqual(zd._td_class(zf, zp), exp, (zf, zp))
+        self.assertEqual(zd._td_class(None, None), ('none', 0, 0)); self.assertEqual(zd._td_class(None, 1.2), ('p', 1, 1)); self.assertEqual(zd._td_class(-2.0, None), ('f', -1, 2))
+        self.assertEqual(zd._td_class(2.5, 1.5), ('fp', 1, 3), 'siła najwyżej 3'); self.assertEqual(zd._td_class(2.5, 2.5), ('fp', 1, 3))
+        self.assertEqual(zd._td_class(0.99, 0.99), ('none', 0, 0), 'próg 1 rozrzutu'); self.assertEqual(zd._td_class(1.0, 0.0), ('f', 1, 1))
+        self.assertEqual(zd._td_class(0.5, 2.0), ('p', 1, 2)); self.assertEqual(zd._td_class(-0.5, -1.0), ('p', -1, 1))
+
+    def test_pool(self):
+        def dates(n, start='2026-01-05'):
+            d0, out = datetime.date.fromisoformat(start), []
+            while len(out) < n:
+                if d0.weekday() < 5:
+                    out.append(d0.isoformat())
+                d0 += datetime.timedelta(days=1)
+            return out
+        ds = dates(120)
+        lines = {('eq', 'f'): [(d, 1 if i % 3 else 0, 'A') for i, d in enumerate(ds)] + [(d, 1 if i % 3 else 0, 'B') for i, d in enumerate(ds)]}
+        with mock.patch.object(zd, 'wilson', wraps=zd.wilson) as w:
+            bd = zd._td_pool(lines)
+        self.assertEqual(len(bd), 7); self.assertEqual([(b['fam'], b['rule']) for b in bd], list(zd.TD_RULES))
+        e = bd[0]
+        self.assertEqual((e['k'], e['n'], e['days'], e['m'], e['from'], e['to'], e['need']), (160, 240, 120, 2, ds[0], ds[-1], 0), 'dwa rynki na tych samych dniach: dni < par')
+        w.assert_any_call(160, 240, n_eff=120)
+        self.assertEqual(e['p'], 66.7); self.assertEqual(e['ci'], list(zd.wilson(160, 240, n_eff=120))); self.assertEqual(e['vd'], 'edge')
+        self.assertTrue(e['h1'] > 50 and e['h2'] > 50); self.assertEqual((e['lk'], e['ln'], e['ldays']), (0, 0, 0), 'przed wdrożeniem — licznik pusty')
+        for b in bd[1:]:
+            self.assertEqual((b['k'], b['n'], b['days'], b['p'], b['ci'], b['h1'], b['h2'], b['m'], b['need'], b['vd'], b['from']),
+                             (0, 0, 0, None, [None, None], None, None, 0, 100, 'short', None), 'linia bez par: braki, nie zera')
+        anti = zd._td_pool({('pm', 'p'): [(d, 1 if i % 3 == 0 else 0, 'SLV') for i, d in enumerate(ds)]})[5]
+        self.assertEqual((anti['fam'], anti['rule'], anti['vd'], anti['p']), ('pm', 'p', 'anti', 33.3)); self.assertTrue(anti['ci'][1] < 50)
+        veto = zd._td_pool({('eq', 'p'): [(d, 1 if i < 60 or i % 20 < 9 else 0, 'A') for i, d in enumerate(ds)]})[1]   # 60/60, potem 27/60
+        self.assertTrue(veto['ci'][0] > 50 and veto['h1'] > 50 and veto['h2'] < 50, veto)
+        self.assertEqual(veto['vd'], 'none', 'druga połowa poniżej 50 — bez przewagi mimo dolnej granicy > 50')
+        none = zd._td_pool({('eq', 'fp'): [(d, i % 2, 'A') for i, d in enumerate(ds)]})[2]
+        self.assertEqual((none['vd'], none['p']), ('none', 50.0))
+        short = zd._td_pool({('pm', 'f'): [(d, 1, 'GLD') for d in ds[:70]]})[4]
+        self.assertEqual((short['vd'], short['days'], short['need'], short['p']), ('short', 70, 30, 100.0), 'za mało dni mimo 100 % trafień')
+        late = dates(30, '2026-09-28')
+        oos = zd._td_pool({('eq', 'f'): [(d, 1, 'A') for d in ds] + [(d, i % 2, 'A') for i, d in enumerate(late)] + [(late[0], 1, 'B')]})[0]
+        self.assertEqual((oos['lk'], oos['ln'], oos['ldays']), (16, 31, 30), 'od wdrożenia: tylko daty ≥ TD_SINCE')
+        self.assertEqual(zd._td_pool({})[3]['vd'], 'short'); self.assertEqual(zd._td_pool(None)[6]['rule'], 'fp')
+
+    def test_live_clock(self):
+        sat = datetime.datetime(2026, 9, 26, 6, 0)
+        self.assertTrue(zd._td_live('2026-09-25', sat), 'dane z piątku, sobota — aktualne do poniedziałku 16:15')
+        self.assertEqual(zd._td_next('2026-09-25').isoformat(), '2026-09-28', 'następna sesja po piątku = poniedziałek')
+        self.assertFalse(zd._td_live('2026-09-24', sat), 'dane z czwartku, sobota — sesja piątkowa minęła')
+        self.assertFalse(zd._td_live('2026-09-25', datetime.datetime(2026, 9, 28, 16, 20)), 'poniedziałek 16:20 NY — nieaktualne')
+        self.assertTrue(zd._td_live('2026-09-25', datetime.datetime(2026, 9, 28, 15, 0)), 'poniedziałek 15:00 NY — aktualne')
+        self.assertTrue(zd._td_live('2026-09-25', datetime.datetime(2026, 9, 28, 16, 14, 59)))
+        self.assertFalse(zd._td_live('2026-09-25', datetime.datetime(2026, 9, 28, 16, 15)))
+        from zoneinfo import ZoneInfo
+        self.assertFalse(zd._td_live('2026-09-25', datetime.datetime(2026, 9, 28, 16, 20, tzinfo=ZoneInfo('America/New_York'))), 'zegar ze strefą — to samo')
+        self.assertEqual(zd._td_next('2026-09-26').isoformat(), '2026-09-28'); self.assertEqual(zd._td_next('2026-09-23').isoformat(), '2026-09-24')
+
+    def test_country_rows(self):
+        ds = self.days(80)
+        ewt = self.fund(80); ewt['h'] = ewt['h'][:-1]                       # ostatni dzień przepływu bez NAV
+        tw = {'d': [[d, 100.0 + 20.0 * ((-1) ** i), 0, 0, 0, 3.1 + 0.6 * ((-1) ** i), d] for i, d in enumerate(ds)], 'empty': []}   # spokojne dni
+        tw['d'][-1][1] = 5000.0; tw['d'][-1][5] = 155.0
+        india = {'d': [[d, 20.0 + 4.0 * ((-1) ** i), 1.0, 0, 0, 88.0] for i, d in enumerate(ds)]}
+        india['d'][-1][1] = 900.0
+        S = {'obce': {'tw': tw, 'in': india}, 'fundusze': {'f': {'EWT': ewt, 'INDA': self.fund(80)}}}
+        d, _ = zd.build_daily(S)
+        by = {r['id']: r for r in d}
+        self.assertEqual(set(by), {'EWT', 'INDA', 'in_eq', 'tw'})
+        t = by['tw']
+        self.assertEqual((t['sym'], t['cur'], t['f'], t['fu'], t['grp'], t['iss'], t['pub'], t['date']), ('EWT', 'TWD', 5000.0, 155.0, None, None, 0, ds[-1]))
+        self.assertIsNone(t['r']); self.assertIsNone(t['zp']); self.assertNotEqual(t['r'], 0)
+        self.assertEqual((t['rule'], t['dir'], t['st'], t['side']), ('f', 1, 'obs', 'buy'), 'sam przepływ (cena: brak) daje regułę f')
+        i = by['in_eq']
+        self.assertEqual((i['sym'], i['cur'], i['f'], i['fu'], i['rule']), ('INDA', 'USD', 900.0, 900.0, 'f'), 'Indie już w USD: fu = f')
+        self.assertTrue(zd._isnum(i['r']) and zd._isnum(i['zp']), 'NAV z tego dnia jest — zwrot policzony')
+        d2, b2 = zd.build_daily({'obce': {'tw': tw, 'in': india}})
+        self.assertEqual((d2, b2), (None, None), 'bez pliku funduszy — bez wierszy krajów (nie karta z samymi brakami); bez żadnej serii — blok niepoliczony')
+        s = zd._td_series_ob({'tw': tw}, zd.TD_OB[1], {'EWT': self.fund(80)})
+        self.assertEqual(len(s['dates']), 80); self.assertIsNone(s['ret'][0]); self.assertTrue(all(zd._isnum(x) for x in s['ret'][1:]))
+        holes = dict(tw); holes['d'] = tw['d'][:-2] + tw['d'][-1:]         # dzień roboczy bez wiersza → kalendarz sesji: brak
+        s = zd._td_series_ob({'tw': holes}, zd.TD_OB[1], {'EWT': self.fund(80)})
+        self.assertEqual(len(s['dates']), 80); self.assertIsNone(s['flow'][-2]); self.assertIsNotNone(s['ret'][-2], 'NAV jest, więc zwrot jest')
+
+    def test_build_trendy_integration(self):
+        import copy
+        S = TrendyV89('test_build_rows').S(); S0 = copy.deepcopy(S)
+        out = zd.build_trendy(S)
+        with mock.patch.object(zd, 'build_daily', return_value=([], [])):
+            ref = zd.build_trendy(S)
+        self.assertEqual(S, S0, 'build_trendy nie zmienia wejścia')
+        for k in ('f', 'p', 'b', 'rules', 'v'):
+            self.assertEqual(out[k], ref[k], f'{k}: część tygodniowa bajt w bajt jak przed łatką')
+        self.assertEqual(set(out) - set(ref), set()); self.assertEqual(set(out), {'at', 'v', 'src', 'rules', 'f', 'p', 'b', 'dv', 'dsince', 'dr', 'd', 'bd'})
+        self.assertEqual((out['dv'], out['dsince']), (1, '2026-09-28'))
+        self.assertEqual(out['dr'], {'lb': 60, 'min': 40, 'z1': 1.0, 'z2': 2.0, 'floor': 0.25, 'gap': 4, 'neff': 100, 'pub': {'ishares': 0, 'ssga': 1},
+                                     'pubsym': {'GLD': 0, 'GLDM': 0}, 'excluded': ['br', 'mx', 'th', 'in_bd', 'jp', 'tr', 'cf', 'cs', 'cr', 'ix']})
+        self.assertEqual((out['d'], out['bd']), (None, None), 'bez funduszy, krajów i cen — blok niepoliczony (null), nie „zero rynków”')
+        self.assertIn('"d": null, "bd": null', json.dumps(out, ensure_ascii=False))
+        self.assertEqual([b['id'] for b in out['b']], ['th', 'mx', 'ob'], 'część tygodniowa nietknięta')
+        px = self.closes(70)
+        out = zd.build_trendy({'ceny': {'q': {'EWC': {'d': px}, 'KSA': {'d': px[:10]}}}})
+        self.assertEqual([r['id'] for r in out['d']], ['EWC', 'KSA'], 'bez funduszy: tylko rynki z ceną')
+        e = out['d'][0]
+        self.assertEqual((e['f'], e['zf'], e['fu'], e['cur'], e['grp'], e['iss'], e['pub']), (None, None, None, None, None, None, 0), 'rynek tylko z ceną: przepływ = brak')
+        self.assertTrue(zd._isnum(e['r']) and zd._isnum(e['zp'])); self.assertEqual(out['d'][1]['st'], 'short', '10 dni cen — za mało historii')
+        self.assertEqual([(b['fam'], b['rule']) for b in out['bd']], list(zd.TD_RULES), 'same ceny: 7 linii, jest co liczyć')
+        self.assertTrue(all(b['n'] == 0 and b['vd'] == 'short' for b in out['bd'] if b['fam'] != 'eq' or b['rule'] != 'p'))
+        zd.META['notes'].clear()
+        out = zd.build_trendy({'fundusze': {'f': {'IVV': self.fund(80)}}, 'ceny': {'q': {'EWC': {'d': 5}}}})
+        self.assertEqual([r['id'] for r in out['d']], ['IVV'], 'zepsuta seria cen — wiersz funduszu zostaje')
+        self.assertTrue(any(n.startswith('trendy dziennie EWC:') for n in zd.META['notes']), zd.META['notes'])
+        zd.META['notes'].clear()
+        S2 = {'fundusze': {'f': {'IVV': self.fund(80)}}}
+        ok = zd.build_trendy(S2)
+        self.assertEqual([r['id'] for r in ok['d']], ['IVV']); zd.META['notes'].clear()
+        with mock.patch.object(zd, 'build_daily', side_effect=RuntimeError('awaria')):
+            out = zd.build_trendy(S2)
+        self.assertEqual((out['d'], out['bd'], out['dv']), (None, None, 1), 'awaria to nie „zero rynków”: null, strona ukrywa blok')
+        self.assertIn('trendy dziennie: awaria', zd.META['notes'])
+        for k in ('f', 'p', 'b', 'rules', 'v'):
+            self.assertEqual(out[k], ok[k], f'{k}: część tygodniowa policzona jak zwykle')
+        self.assertIsNone(zd.build_trendy(None)['d'])
+
+    def test_constants(self):
+        import inspect
+        self.assertIsInstance(zd.TD_Z1, float); self.assertIsInstance(zd.TD_Z2, float); self.assertIsInstance(zd.TD_FLOOR, float)
+        self.assertEqual(len(zd.TD_RULES), 7); self.assertEqual(len(set(zd.TD_RULES)), 7)
+        self.assertEqual({f for f, _ in zd.TD_RULES}, {'eq', 'bd', 'pm'}); self.assertNotIn(('bd', 'p'), zd.TD_RULES); self.assertNotIn(('bd', 'fp'), zd.TD_RULES)
+        src = inspect.getsource(zd._td_class) + inspect.getsource(zd._td_z) + inspect.getsource(zd._td_pairs) + inspect.getsource(zd._td_pool)
+        for sym in list(zd.TD_GRP) + list(zd.TD_PX) + ['in_eq', 'tw', 'hk']:
+            self.assertNotRegex(src, r"'" + sym + r"'", f'żadnych progów na rynek: {sym}')
+        self.assertFalse(set(zd.TD_FAM['bd']) & set(zd.TD_FAM['pm']))
+        self.assertTrue(set(zd.TD_FAM['bd']) | set(zd.TD_FAM['pm']) <= set(zd.TD_GRP), 'rodziny tylko z funduszy z TR_FE')
+        self.assertEqual(len(zd.TD_GRP), 37); self.assertEqual(zd.TD_GRP['SPY'], 'fe_us'); self.assertEqual(zd.TD_GRP['SLV'], 'fe_silver')
+        self.assertEqual(zd.TD_SINCE, '2026-09-28'); self.assertEqual(zd.TD_V, 1); self.assertEqual(zd.TD_PUB, {'ishares': 0, 'ssga': 1})
+        self.assertEqual(zd.TD_PUB_SYM, {'GLD': 0, 'GLDM': 0}); self.assertTrue(set(zd.TD_PUB_SYM) <= set(zd.TD_GRP), 'wyjątki tylko dla funduszy z listy')
+        self.assertEqual({t: zd._td_series_fund({t: self.fund(80, iss=i)}, t)['pub'] for t, i in (('GLD', 'ssga'), ('GLDM', 'ssga'), ('SPY', 'ssga'), ('BIL', 'ssga'), ('IAU', 'ishares'))},
+                         {'GLD': 0, 'GLDM': 0, 'SPY': 1, 'BIL': 1, 'IAU': 0}, 'wyjątek pliku przed wydawcą; pozostałe pliki wydawcy bez zmian')
+        self.assertEqual([o[0] for o in zd.TD_OB], ['in_eq', 'tw', 'hk']); self.assertEqual(len(zd.TD_PX), 9)
+        self.assertNotIn('SPY', zd.TD_PX, 'SPY ma przepływy — nie jest rynkiem tylko z ceną')
+
+    def test_rows_nulls_and_states(self):
+        fu = {'IVV': self.fund(80, last_du=50000), 'SPY': self.fund(80, end='2026-09-24', iss='ssga'), 'GLD': self.fund(80, last_ret=-3.0, iss='ssga'),
+              'SLV': self.fund(30), 'XLK': self.fund(80, last_du=50000, last_ret=-3.0), 'EEM': self.fund(80), 'EWT': self.fund(80, end='2026-09-24')}
+        px = self.closes(70)
+        tw = {'d': [[d, 100.0 + 20.0 * ((-1) ** i), 0, 0, 0, 3.1 + 0.6 * ((-1) ** i), d] for i, d in enumerate(self.days(80))], 'empty': []}
+        tw['d'][-1][1] = None; tw['d'][-1][5] = None                        # ostatni dzień bez liczb (a NAV EWT z tego dnia też brak)
+        d, bd = zd.build_daily({'fundusze': {'f': fu}, 'ceny': {'q': {'EWC': {'d': px}}}, 'obce': {'tw': tw}})
+        by = {r['id']: r for r in d}
+        self.assertEqual([r['id'] for r in d], ['SPY', 'IVV', 'XLK', 'EEM', 'EWT', 'GLD', 'SLV', 'tw', 'EWC'], 'kolejność: fundusze wg TR_FE, kraje, ceny')
+        for r in d:
+            self.assertIn(r['st'], self.STATES); self.assertIn(r['rule'], ('f', 'p', 'fp', 'x', 'none')); self.assertIn(r['dir'], (-1, 0, 1))
+            self.assertIn(r['str'], (0, 1, 2, 3)); self.assertIn(r['vd'], ('edge', 'anti', 'none', 'short', None))
+            for k in ('f', 'zf', 'fu', 'r', 'zp'):
+                self.assertTrue(r[k] is None or (zd._isnum(r[k]) and not isinstance(r[k], bool)), (r['id'], k, r[k]))
+            self.assertEqual(r['side'], ('buy' if r['dir'] > 0 else 'sell') if r['st'] in ('buy', 'sell', 'obs') else 'none', r['id'])
+            if r['st'] in ('buy', 'sell', 'obs'):
+                self.assertNotEqual(r['dir'], 0); self.assertTrue(r['live'])
+            self.assertEqual(r['nx'] > r['date'], True); self.assertEqual(len(r), 24)
+        self.assertEqual((by['IVV']['st'], by['IVV']['rule'], by['IVV']['side'], by['IVV']['str'], by['IVV']['vd']), ('obs', 'f', 'buy', 2, 'short'))
+        self.assertEqual((by['IVV']['ik'], by['IVV']['in']), (0, 0), 'ten rynek: jeszcze bez par — zero par to prawdziwe zero')
+        self.assertEqual((by['SPY']['st'], by['SPY']['pub'], by['SPY']['date'], by['SPY']['nx'], by['SPY']['live'], by['SPY']['age'], by['SPY']['side']),
+                         ('stale', 1, '2026-09-24', '2026-09-25', False, 2, 'none'), 'wiersz z czwartku w sobotę — nieaktualny')
+        self.assertEqual((by['GLD']['st'], by['GLD']['rule'], by['GLD']['dir'], by['GLD']['side'], by['GLD']['fam']), ('obs', 'p', -1, 'sell', 'pm'))
+        self.assertEqual((by['GLD']['iss'], by['GLD']['pub']), ('ssga', 0), 'trust złota: dane dzień wcześniej niż reszta plików wydawcy')
+        self.assertEqual((by['SLV']['st'], by['SLV']['zf'], by['SLV']['zp']), ('short', None, None), '30 dni — za mało historii, z = brak')
+        self.assertEqual((by['XLK']['st'], by['XLK']['rule'], by['XLK']['dir'], by['XLK']['side'], by['XLK']['str']), ('x', 'x', 0, 'none', 0), 'napływ, ale cena w dół')
+        self.assertEqual((by['EEM']['st'], by['EEM']['rule']), ('quiet', 'none'))
+        self.assertEqual((by['tw']['st'], by['tw']['f'], by['tw']['fu'], by['tw']['zf']), ('nodata', None, None, None), 'brak liczb z tego dnia — brak, nie zero')
+        self.assertEqual((by['EWC']['st'], by['EWC']['f'], by['EWC']['ik'], by['EWC']['in']), ('quiet', None, None, None))
+        self.assertEqual(len(bd), 7); self.assertTrue(all(b['vd'] == 'short' for b in bd), 'krótkie serie — wszystkie linie „za mało historii”')
+        self.assertEqual((bd[0]['n'], bd[0]['m'], bd[0]['p']), (0, 0, None), 'spokojne przepływy w historii — linia eq·f bez par (brak, nie zero)')
+        self.assertTrue(bd[1]['n'] > 0 and bd[1]['m'] >= 1 and bd[1]['days'] < bd[1]['n'], 'eq·p: kilka funduszy na tych samych dniach — dni < par')
+
+    def test_flat_flow_history(self):
+        """Przegląd v120, uwaga 1: liczba jednostek bez zmian przez tygodnie (przepływ dokładnie 0 każdego dnia), potem tworzenie jednostek.
+        Prawdziwa liczba nie może wyjść jako brak: karta nie może pisać „brak danych”, a test wstecz musi widzieć taki dzień."""
+        def hist(last_du):
+            h, p = [], 100.0
+            for i, d in enumerate(self.days(80)):
+                if i:
+                    p = p * (1 + (0.1 if i == 79 else (0.5 if i % 2 else -0.5)) / 100)
+                h.append([d, round(p, 6), 1000000 + (last_du if i == 79 else 0)])
+            return {'iss': 'ishares', 'h': h}
+        d, bd = zd.build_daily({'fundusze': {'f': {'EFA': hist(50000), 'EEM': hist(0), 'EWJ': hist(-50000)}}})
+        by = {r['id']: r for r in d}
+        e = by['EFA']
+        self.assertTrue(e['f'] > 4.9, e['f'])
+        self.assertEqual((e['zf'], e['rule'], e['dir'], e['str'], e['st'], e['side']), (2.0, 'f', 1, 2, 'obs', 'buy'), 'duży napływ po płaskim tle — sygnał „dużo większy”')
+        self.assertEqual((by['EWJ']['zf'], by['EWJ']['rule'], by['EWJ']['side']), (-2.0, 'f', 'sell'), 'odpływ po płaskim tle')
+        q = by['EEM']
+        self.assertEqual((q['f'], q['zf'], q['rule'], q['st']), (0.0, 0.0, 'none', 'quiet'), 'zero po zerach: prawdziwe 0 i z = 0 (spokojny dzień), nie brak')
+        for r in d:
+            self.assertFalse(zd._isnum(r['f']) and r['zf'] is None, 'liczba przepływu przy 40+ dniach tła zawsze ma z')
+        ds = self.days(50); flow = [0.0] * 50; flow[45] = 12.5
+        ret = [None] * 50; ret[46] = 0.7
+        self.assertEqual(zd._td_pairs(ds, flow, ret, 0), [(ds[45], 'f', 1, 1)], 'napływ po samych zerach — para f w teście wstecz')
+
+    def test_failure_isolated(self):
+        """Przegląd v120, uwaga 2: awaria jednego rynku (test wstecz albo karta) nie kasuje pozostałych; brak kart = None, nie []."""
+        fu = {'IVV': self.fund(80), 'EEM': self.fund(80), 'EWJ': self.fund(80)}
+        real_pairs, real_row = zd._td_pairs, zd._td_row
+        calls = []
+
+        def pairs(*a, **k):
+            calls.append(1)
+            if len(calls) == 1:
+                raise RuntimeError('zła seria')
+            return real_pairs(*a, **k)
+
+        def row(s, *a):
+            if s['id'] == 'EWJ':
+                raise ValueError('zły dzień')
+            return real_row(s, *a)
+        with mock.patch.object(zd, '_td_pairs', side_effect=pairs), mock.patch.object(zd, '_td_row', side_effect=row):
+            d, bd = zd.build_daily({'fundusze': {'f': fu}})
+        self.assertEqual([r['id'] for r in d], ['EEM'], 'IVV (test wstecz) i EWJ (karta) bez kart — EEM zostaje')
+        self.assertEqual(len(bd), 7)
+        self.assertEqual([n for n in zd.META['notes'] if n.startswith('trendy dziennie')], ['trendy dziennie IVV: zła seria', 'trendy dziennie EWJ: zły dzień'])
+        zd.META['notes'].clear()
+        with mock.patch.object(zd, '_td_row', side_effect=RuntimeError('wszystko')):
+            self.assertEqual(zd.build_daily({'fundusze': {'f': fu}}), (None, None), 'żadnej karty — blok niepoliczony, nie „zero rynków”')
+        self.assertEqual(len(zd.META['notes']), 3)
+        self.assertEqual(zd.build_daily({}), (None, None)); self.assertEqual(zd.build_daily(None), (None, None))
+        self.assertEqual(zd.build_daily({'fundusze': {'f': {'IVV': {'iss': 'ishares', 'h': [['2026-09-25', 1.0, 1]]}}}}), (None, None), 'jeden wiersz — bez serii')
+
+    def test_country_price_not_pooled(self):
+        """Przegląd v120, uwaga 4: wiersz kraju ma cenę z NAV funduszu, który ma własny wiersz — jego pary „p” nie idą do linii
+        zbiorczej (ten sam dzień i ta sama sesja wyniku liczyłyby się dwa razy); pary „f”/„fp” (własne wejście: przepływ zagraniczny) idą."""
+        ds = self.days(80)
+        india = {'d': [[x, 20.0 + 4.0 * ((-1) ** i), 1.0, 0, 0, 88.0] for i, x in enumerate(ds)]}
+        fixed = [(ds[50], 'p', 1, 1), (ds[51], 'f', 1, 0), (ds[52], 'fp', -1, 1), (ds[53], 'x', 0, None)]
+        with mock.patch.object(zd, '_td_pairs', return_value=fixed):
+            d, bd = zd.build_daily({'obce': {'in': india}, 'fundusze': {'f': {'INDA': self.fund(80)}}})
+        self.assertEqual([r['id'] for r in d], ['INDA', 'in_eq'])
+        line = {(b['fam'], b['rule']): b for b in bd}
+        self.assertEqual((line[('eq', 'p')]['n'], line[('eq', 'p')]['m']), (1, 1), 'eq·p: tylko para funduszu, bez duplikatu z wiersza kraju')
+        self.assertEqual((line[('eq', 'f')]['n'], line[('eq', 'f')]['m'], line[('eq', 'fp')]['n'], line[('eq', 'fp')]['m']), (2, 2, 2, 2), 'f i fp z obu wierszy')
+        s = zd._td_series_ob({'in': india}, zd.TD_OB[0], {'INDA': self.fund(80)})
+        self.assertEqual(s['nopool'], ('p',)); self.assertNotIn('nopool', zd._td_series_fund({'INDA': self.fund(80)}, 'INDA'))
+        self.assertNotIn('nopool', d[1], 'klucz wewnętrzny — nie trafia do pliku')
+
+    def test_anti_never_flips_side(self):
+        fu = {'IVV': self.fund(80, last_du=50000), 'GLD': self.fund(80, last_du=-50000, iss='ishares')}
+        base = zd._td_pool({})
+        for vd in ('anti', 'none', 'short', 'edge'):
+            fake = [dict(b, vd=vd) for b in base]
+            with mock.patch.object(zd, '_td_pool', return_value=fake):
+                d, bd = zd.build_daily({'fundusze': {'f': fu}})
+            by = {r['id']: r for r in d}
+            exp = ('buy', 'sell') if vd == 'edge' else ('obs', 'obs')
+            self.assertEqual((by['IVV']['st'], by['IVV']['side'], by['IVV']['dir'], by['IVV']['vd']), (exp[0], 'buy', 1, vd), vd)
+            self.assertEqual((by['GLD']['st'], by['GLD']['side'], by['GLD']['dir'], by['GLD']['vd']), (exp[1], 'sell', -1, vd), 'anti/none/short: obserwacja po stronie kierunku, nigdy odwrotnie')
+            self.assertEqual([b['vd'] for b in bd], [vd] * 7)
+
+
 class ObceV91(unittest.TestCase):
     """v91: Indie, Tajwan, Hongkong co godzinę; Brazylia, Turcja, ThaiBMA najwyżej co 3 h (bez zapytania, gdy część świeża i bez błędu)."""
 
