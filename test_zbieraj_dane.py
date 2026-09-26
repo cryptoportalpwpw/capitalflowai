@@ -7741,3 +7741,24 @@ class AukcjeV121(unittest.TestCase):
         self.assertEqual(h.count('<section class="panel pcard" id="g-aukcje" hidden></section>'), 1); self.assertIn("srvJSON('aukcje')", h); self.assertIn('const EXTRA114=', h)
         wf = open(os.path.join(root, '.github', 'workflows', 'strona.yml'), encoding='utf-8').read()
         self.assertNotIn('AUKCJE', wf, 'żadnego sekretu — źródło publiczne')
+
+
+class BezSieciV122(unittest.TestCase):
+    """v122: w kroku testów GitHub Actions sieć jest zablokowana (narzedzia/bez_sieci/sitecustomize.py) — test, który woła prawdziwe
+    źródło zamiast zaślepki, zatrzymuje publikację (kod 3) zamiast łączyć się z serwerem. 26.09.2026 dwa testy harmonogramu wołały
+    budowniczego nowego źródła bez zaślepki i przechodziły, bo main() łapie wyjątki."""
+    ROOT = os.path.dirname(os.path.abspath(__file__))
+
+    def test_workflow_blocks_network_in_tests(self):
+        with open(os.path.join(self.ROOT, '.github', 'workflows', 'strona.yml'), encoding='utf-8') as f:
+            wf = f.read()
+        self.assertIn('PYTHONPATH=narzedzia/bez_sieci PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -v test_zbieraj_dane.py', wf)
+
+    def test_guard_exits_3_on_a_network_attempt(self):
+        import subprocess, sys
+        env = dict(os.environ, PYTHONPATH=os.path.join(self.ROOT, 'narzedzia', 'bez_sieci'))
+        kod = 'import socket\ntry:\n    socket.create_connection(("example.com", 80), timeout=1)\nexcept OSError:\n    pass\n'
+        r = subprocess.run([sys.executable, '-c', kod], env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 3, r.stderr); self.assertIn('testy bez sieci', r.stderr)
+        r2 = subprocess.run([sys.executable, '-c', 'print(1)'], env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual((r2.returncode, r2.stdout.strip()), (0, '1'), 'bez prób sieci — zwykły kod wyjścia')
